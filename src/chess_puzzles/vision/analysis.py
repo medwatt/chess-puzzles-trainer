@@ -13,6 +13,15 @@ from enum import Enum
 
 import chess
 
+_PIECE_VALUES: dict[chess.PieceType, int] = {
+    chess.PAWN: 1,
+    chess.KNIGHT: 3,
+    chess.BISHOP: 3,
+    chess.ROOK: 5,
+    chess.QUEEN: 9,
+    chess.KING: 100,
+}
+
 
 class ColorScope(Enum):
     """Whose pieces an answer set should include."""
@@ -55,10 +64,10 @@ def hanging(
     scope: ColorScope = ColorScope.BOTH,
     include_pawns: bool = False,
 ) -> frozenset[int]:
-    """Undefended *and* attacked by at least one enemy piece (kings excluded).
+    """Pieces an enemy can legally capture for material gain.
 
-    This is the strict literal definition, deliberately distinct from
-    ``board.control.squares_in_danger`` which uses a looser danger heuristic.
+    This uses a small static exchange evaluator on the target square. It is
+    still engine-free, but handles pinned pieces and longer recapture chains.
     """
     colors = scope_colors(board, scope)
     result: set[int] = set()
@@ -67,9 +76,7 @@ def hanging(
             continue
         if not _is_candidate(piece, include_pawns):
             continue
-        if board.attackers(piece.color, square):
-            continue
-        if board.attackers(not piece.color, square):
+        if _can_be_won_by_capture(board, square, piece):
             result.add(square)
     return frozenset(result)
 
@@ -135,6 +142,38 @@ def _is_candidate(piece: chess.Piece, include_pawns: bool) -> bool:
     if piece.piece_type == chess.PAWN and not include_pawns:
         return False
     return True
+
+
+def _can_be_won_by_capture(board: chess.Board, square: int, piece: chess.Piece) -> bool:
+    enemy = not piece.color
+    captured_value = _PIECE_VALUES[piece.piece_type]
+    for attacker_square in board.attackers(enemy, square):
+        move = chess.Move(attacker_square, square)
+        test = board.copy(stack=False)
+        test.turn = enemy
+        if not test.is_legal(move):
+            continue
+        test.push(move)
+        if captured_value - _best_exchange_gain(test, square) > 0:
+            return True
+    return False
+
+
+def _best_exchange_gain(board: chess.Board, square: int) -> int:
+    captured = board.piece_at(square)
+    if captured is None:
+        return 0
+    best = 0
+    for attacker_square in board.attackers(board.turn, square):
+        move = chess.Move(attacker_square, square)
+        if not board.is_legal(move):
+            continue
+        test = board.copy(stack=False)
+        test.push(move)
+        gain = _PIECE_VALUES[captured.piece_type] - _best_exchange_gain(test, square)
+        if gain > best:
+            best = gain
+    return best
 
 
 def pieces_of_types(board: chess.Board, piece_types: Iterable[chess.PieceType]) -> list[int]:

@@ -1,4 +1,4 @@
-"""Drill 3 -- hanging pieces: undefended and attacked by an enemy piece."""
+"""Drill 3 -- hanging pieces: pieces capturable for material gain."""
 
 from __future__ import annotations
 

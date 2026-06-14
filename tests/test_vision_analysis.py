@@ -27,13 +27,33 @@ def test_undefended_scope_side_to_move() -> None:
     assert all(board.piece_at(sq).color == chess.WHITE for sq in only_white)
 
 
-def test_hanging_is_undefended_and_attacked() -> None:
+def test_hanging_is_capturable_for_material_gain() -> None:
     # Rd2 attacks the undefended black knight on d4.
     board = chess.Board("4k3/8/8/8/3n4/8/3R4/4K3 w - - 0 1")
     assert analysis.hanging(board) == frozenset({chess.D4})
     # A knight that is undefended but unattacked is not hanging.
     quiet = chess.Board("4k3/8/8/3n4/8/8/4R3/4K3 w - - 0 1")
     assert analysis.hanging(quiet) == frozenset()
+
+
+def test_hanging_ignores_pinned_attackers() -> None:
+    board = chess.Board("r4rk1/1p2p1bp/nq1pP2B/p1p5/2P1b1Q1/2N5/PP3PPP/R3K2R b KQ - 0 1")
+    assert chess.H6 not in analysis.hanging(board)
+
+
+def test_hanging_ignores_captures_that_are_recaptured() -> None:
+    board = chess.Board("2r1k1nr/pp1b2pp/4p3/3pp2B/8/1P6/PNqQ1PPP/R4RK1 b - - 0 1")
+    assert chess.B2 not in analysis.hanging(board)
+
+
+def test_hanging_includes_favorable_captures_even_when_recaptured() -> None:
+    board = chess.Board("k7/8/8/2p5/3Q4/8/8/3R3K b - - 0 1")
+    assert chess.D4 in analysis.hanging(board)
+
+
+def test_hanging_static_exchange_follows_longer_capture_chain() -> None:
+    board = chess.Board("4k3/8/8/3r4/8/3n4/3R4/3R1K2 b - - 0 1")
+    assert chess.D2 not in analysis.hanging(board)
 
 
 def test_reach_pawn_diagonals_and_blocker_inclusion() -> None:
