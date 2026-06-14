@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import random
+
 import chess
 
 from chess_puzzles.vision import analysis
 from chess_puzzles.vision.analysis import ColorScope
+from chess_puzzles.vision.drills.long_range import LongRangeAttackDrill
 
 
 def _squares(names: str) -> set[int]:
@@ -69,6 +72,40 @@ def test_reach_excludes_own_pieces_when_requested() -> None:
     trimmed = analysis.reach(board, chess.E2, include_defended_squares=False)
     assert chess.D2 in full and chess.E1 in full
     assert chess.D2 not in trimmed and chess.E1 not in trimmed
+
+
+def test_long_range_attackers_clicks_sliders_with_enemy_piece_targets() -> None:
+    board = chess.Board("n3k3/8/8/8/8/3n4/8/R2Q1BK1 w Q - 0 1")
+    result = analysis.long_range_attackers(board)
+    assert result == _squares("a1 d1 f1")
+
+
+def test_long_range_attackers_ignores_friendly_and_pawn_targets_by_default() -> None:
+    board = chess.Board("p3k3/8/8/8/8/3p4/8/R2Q1BK1 w Q - 0 1")
+    assert analysis.long_range_attackers(board) == frozenset()
+    assert analysis.long_range_attackers(board, include_pawns=True) == _squares("a1 d1 f1")
+
+
+def test_long_range_attackers_ignores_adjacent_enemy_targets() -> None:
+    adjacent = chess.Board("k7/8/6Qb/8/8/8/8/4K3 w - - 0 1")
+    assert chess.G6 not in analysis.long_range_attackers(adjacent)
+    distant = chess.Board("k7/8/4b1Q1/8/8/8/8/4K3 w - - 0 1")
+    assert analysis.long_range_attackers(distant) == _squares("g6")
+
+
+def test_long_range_attackers_scope() -> None:
+    board = chess.Board("n3k3/8/8/8/8/3n4/8/R2Q1BK1 w Q - 0 1")
+    assert analysis.long_range_attackers(board, scope=ColorScope.SIDE_TO_MOVE) == _squares("a1 d1 f1")
+    assert analysis.long_range_attackers(board, scope=ColorScope.OPPONENT) == frozenset()
+
+
+def test_long_range_drill_defaults_to_side_to_move_attackers() -> None:
+    drill = LongRangeAttackDrill()
+    board = chess.Board("n3k3/8/8/8/8/3n4/8/R2Q1BK1 w Q - 0 1")
+    question = drill.make_question(board, random.Random(0))
+    assert drill.name == "Long-range attacks"
+    assert question.prompt == "Click long-range attackers"
+    assert question.answer == _squares("a1 d1 f1")
 
 
 def test_king_zone_only_attacked_neighbours() -> None:

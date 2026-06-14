@@ -102,6 +102,46 @@ def reach(
     return frozenset(s for s in attacks if board.color_at(s) != piece.color)
 
 
+def long_range_attackers(
+    board: chess.Board,
+    *,
+    scope: ColorScope = ColorScope.BOTH,
+    include_pawns: bool = False,
+) -> frozenset[int]:
+    """Bishops, rooks, and queens attacking a non-adjacent enemy piece.
+
+    The answer square is the sliding piece, not its target. Pawns are ignored by
+    default so ordinary pawn captures do not dominate the drill. Adjacent pieces
+    are ignored; the drill is about seeing longer rank/file/diagonal attacks.
+    """
+    return frozenset(long_range_attack_targets(board, scope=scope, include_pawns=include_pawns))
+
+
+def long_range_attack_targets(
+    board: chess.Board,
+    *,
+    scope: ColorScope = ColorScope.BOTH,
+    include_pawns: bool = False,
+) -> dict[int, frozenset[int]]:
+    """Long-range attacking sliders keyed by the enemy pieces they directly see."""
+    colors = scope_colors(board, scope)
+    slider_types = {chess.BISHOP, chess.ROOK, chess.QUEEN}
+    result: dict[int, set[int]] = {}
+    for square, piece in board.piece_map().items():
+        if piece.color not in colors or piece.piece_type not in slider_types:
+            continue
+        for target in board.attacks(square):
+            target_piece = board.piece_at(target)
+            if target_piece is None or target_piece.color == piece.color:
+                continue
+            if target_piece.piece_type == chess.PAWN and not include_pawns:
+                continue
+            if chess.square_distance(square, target) < 2:
+                continue
+            result.setdefault(square, set()).add(target)
+    return {square: frozenset(targets) for square, targets in result.items()}
+
+
 def king_zone_attacked(board: chess.Board, king_color: chess.Color) -> frozenset[int]:
     """Squares adjacent to ``king_color``'s king that the opponent attacks."""
     king_square = board.king(king_color)

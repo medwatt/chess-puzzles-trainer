@@ -14,6 +14,7 @@ from chess_puzzles.vision.drills import (
     hanging,
     king_zone,
     localization,
+    long_range,
     reach,
     undefended,
 )
@@ -50,6 +51,7 @@ for _drill in (
     attackers.drill,
     hanging.drill,
     undefended.drill,
+    long_range.drill,
     king_zone.drill,
     *reach.drills,
     localization.drill,
