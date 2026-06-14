@@ -1,0 +1,1 @@
+"""Puzzle database manager UI."""

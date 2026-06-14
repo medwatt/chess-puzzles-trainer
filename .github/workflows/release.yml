@@ -1,0 +1,84 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  verify-version:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Tag matches pyproject version
+        run: |
+          version=$(python -c "import tomllib; print(tomllib.load(open('pyproject.toml','rb'))['project']['version'])")
+          if [ "v$version" != "$GITHUB_REF_NAME" ]; then
+            echo "::error::tag $GITHUB_REF_NAME does not match pyproject version v$version"
+            exit 1
+          fi
+
+  build-linux:
+    needs: verify-version
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - run: sudo apt install -y python3-tk
+
+      - run: pip install . pyinstaller
+
+      - run: ./scripts/build_linux.sh
+
+      - run: tar czf chess-puzzles-trainer-linux.tar.gz -C dist chess-puzzles-trainer
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux
+          path: chess-puzzles-trainer-linux.tar.gz
+
+  build-windows:
+    needs: verify-version
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - run: pip install . pyinstaller
+
+      - run: .\scripts\build_windows.ps1
+
+      - run: Compress-Archive -Path dist\chess-puzzles-trainer -DestinationPath chess-puzzles-trainer-windows.zip
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows
+          path: chess-puzzles-trainer-windows.zip
+
+  release:
+    needs: [build-linux, build-windows]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            artifacts/linux/chess-puzzles-trainer-linux.tar.gz
+            artifacts/windows/chess-puzzles-trainer-windows.zip
