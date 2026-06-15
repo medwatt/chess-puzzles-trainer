@@ -20,7 +20,7 @@ from chess_puzzles.vision.drill import DrillKind, Question
 @dataclass(frozen=True, slots=True)
 class AttackersDrill:
     id: ClassVar[str] = "attackers"
-    name: ClassVar[str] = "Attackers of a square"
+    name: ClassVar[str] = "Attackers of marked piece"
     kind: ClassVar[DrillKind] = DrillKind.MULTI_CLICK
 
     def _candidates(self, board: chess.Board) -> list[int]:

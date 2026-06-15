@@ -10,6 +10,7 @@ from __future__ import annotations
 from chess_puzzles.vision.drill import Drill
 from chess_puzzles.vision.drills import (
     attackers,
+    captures,
     checks,
     hanging,
     king_zone,
@@ -48,9 +49,10 @@ class DrillRegistry:
 registry = DrillRegistry()
 for _drill in (
     checks.drill,
-    attackers.drill,
-    hanging.drill,
+    captures.drill,
     undefended.drill,
+    hanging.drill,
+    attackers.drill,
     long_range.drill,
     king_zone.drill,
     *reach.drills,

@@ -81,6 +81,31 @@ def hanging(
     return frozenset(result)
 
 
+def capturable(
+    board: chess.Board,
+    *,
+    scope: ColorScope = ColorScope.OPPONENT,
+    include_pawns: bool = True,
+) -> frozenset[int]:
+    """Pieces that can be captured by the opposing side with a legal move.
+
+    The returned squares are occupied target pieces, not the moving pieces.
+    En passant is excluded because the captured pawn is not on the move's
+    destination square and the right is not visible from a static diagram.
+    """
+    colors = scope_colors(board, scope)
+    capture_targets = _legal_capture_targets_by({not color for color in colors}, board)
+    result: set[int] = set()
+    for target, piece in board.piece_map().items():
+        if piece.color not in colors:
+            continue
+        if not _is_candidate(piece, include_pawns):
+            continue
+        if target in capture_targets:
+            result.add(target)
+    return frozenset(result)
+
+
 def reach(
     board: chess.Board,
     square: int,
@@ -197,6 +222,19 @@ def _can_be_won_by_capture(board: chess.Board, square: int, piece: chess.Piece) 
         if captured_value - _best_exchange_gain(test, square) > 0:
             return True
     return False
+
+
+def _legal_capture_targets_by(colors: set[chess.Color], board: chess.Board) -> set[int]:
+    targets: set[int] = set()
+    for color in colors:
+        test = board.copy(stack=False)
+        test.turn = color
+        targets.update(
+            move.to_square
+            for move in test.legal_moves
+            if test.is_capture(move) and not test.is_en_passant(move)
+        )
+    return targets
 
 
 def _best_exchange_gain(board: chess.Board, square: int) -> int:

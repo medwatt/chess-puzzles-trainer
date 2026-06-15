@@ -123,6 +123,27 @@ def test_hanging_negative_trial_poses_an_empty_answer() -> None:
     assert result.passed is True and session.stats.passed == 1
 
 
+def test_captures_is_registered_after_checks() -> None:
+    ids = registry.ids()
+    assert ids[ids.index("checks") + 1] == "captures"
+
+
+def test_captures_negative_trial_poses_an_empty_answer() -> None:
+    drill = dataclasses.replace(registry.get("captures"), negative_rate=1.0)
+    session = VisionSession(
+        drill,
+        ListPositionSource(
+            (
+                "4k3/8/8/8/8/8/8/4K3 w - - 0 1",
+                "4k3/8/8/3n4/8/8/3R4/4K3 w - - 0 1",
+            )
+        ),
+        rng=random.Random(0),
+    )
+    question = session.next_question()
+    assert question.answer == frozenset()
+
+
 def test_every_registered_drill_makes_a_question() -> None:
     board = "r1bqk2r/pppp1ppp/2n2n2/2b1p3/2B1P3/3P1N2/PPP2PPP/RNBQK2R w KQkq - 0 1"
     rng = random.Random(0)

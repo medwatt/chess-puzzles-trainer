@@ -6,6 +6,7 @@ import chess
 
 from chess_puzzles.vision import analysis
 from chess_puzzles.vision.analysis import ColorScope
+from chess_puzzles.vision.drills.captures import CapturesDrill
 from chess_puzzles.vision.drills.long_range import LongRangeAttackDrill
 
 
@@ -57,6 +58,42 @@ def test_hanging_includes_favorable_captures_even_when_recaptured() -> None:
 def test_hanging_static_exchange_follows_longer_capture_chain() -> None:
     board = chess.Board("4k3/8/8/3r4/8/3n4/3R4/3R1K2 b - - 0 1")
     assert chess.D2 not in analysis.hanging(board)
+
+
+def test_capturable_defaults_to_opponent_pieces_including_pawns() -> None:
+    board = chess.Board("4k3/8/8/3np3/2PP4/8/3R4/4K3 w - - 0 1")
+    assert analysis.capturable(board) == _squares("d5 e5")
+
+
+def test_capturable_scope_side_to_move_and_both() -> None:
+    board = chess.Board("4k3/8/8/3np3/2PP4/8/3R4/4K3 w - - 0 1")
+    assert analysis.capturable(board, scope=ColorScope.SIDE_TO_MOVE) == _squares("d4")
+    assert analysis.capturable(board, scope=ColorScope.BOTH) == _squares("d4 d5 e5")
+
+
+def test_capturable_can_exclude_pawns() -> None:
+    board = chess.Board("4k3/8/8/3np3/2PP4/8/3R4/4K3 w - - 0 1")
+    assert analysis.capturable(board, include_pawns=False) == _squares("d5")
+
+
+def test_capturable_ignores_en_passant() -> None:
+    board = chess.Board("4k3/8/8/3pP3/8/8/8/4K3 w - d6 0 1")
+    assert board.has_legal_en_passant()
+    assert analysis.capturable(board) == frozenset()
+
+
+def test_capturable_ignores_pinned_attackers() -> None:
+    board = chess.Board("4r2k/8/8/7n/8/8/4B3/4K3 w - - 0 1")
+    assert analysis.capturable(board) == frozenset()
+
+
+def test_captures_drill_defaults_to_opponent_targets() -> None:
+    drill = CapturesDrill()
+    board = chess.Board("4k3/8/8/3np3/2PP4/8/3R4/4K3 w - - 0 1")
+    question = drill.make_question(board, random.Random(0))
+    assert drill.name == "Available captures"
+    assert question.prompt == "Click capturable pieces"
+    assert question.answer == _squares("d5 e5")
 
 
 def test_reach_pawn_diagonals_and_blocker_inclusion() -> None:
