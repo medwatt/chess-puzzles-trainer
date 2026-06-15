@@ -192,9 +192,9 @@ class BoardVisionWindow(tk.Toplevel):
         self._timer_box.bind("<<ComboboxSelected>>", lambda _event: self._on_settings_changed())
 
         # Per-drill options, rebuilt from the selected drill's OPTIONS declaration.
-        self._options = OptionsPanel(sidebar)
+        self._options = OptionsPanel(sidebar, on_change=self._on_settings_changed)
         self._options.grid(row=1, column=0, sticky="ew", pady=(8, 0))
-        self._options.show(self._selected_drill())
+        self._show_options()
 
         buttons = ttk.Frame(sidebar)
         buttons.grid(row=2, column=0, sticky="ew", pady=(8, 0))
@@ -221,15 +221,22 @@ class BoardVisionWindow(tk.Toplevel):
     def _selected_timer_seconds(self) -> int:
         return TIMER_CHOICES[[_timer_label(s) for s in TIMER_CHOICES].index(self._timer_box.get())]
 
+    def _show_options(self) -> None:
+        drill = self._selected_drill()
+        self._options.show(drill, self._settings.drill_options.get(drill.id))
+
     def _on_settings_changed(self) -> None:
+        drill = self._selected_drill()
         self._settings = VisionSettings(
-            last_drill_id=self._selected_drill().id, timer_seconds=self._selected_timer_seconds()
+            last_drill_id=drill.id,
+            timer_seconds=self._selected_timer_seconds(),
+            drill_options={**self._settings.drill_options, drill.id: self._options.raw_values()},
         )
         save_vision_settings(self._settings)
 
     def _on_drill_changed(self) -> None:
+        self._show_options()
         self._on_settings_changed()
-        self._options.show(self._selected_drill())
 
     def _toggle_session(self) -> None:
         if self.session is not None:
