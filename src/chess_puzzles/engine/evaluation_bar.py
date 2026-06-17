@@ -61,7 +61,9 @@ class EvaluationBar(tk.Canvas):
         else:
             self.create_rectangle(0, 0, width, split_y, fill=BLACK_SIDE_FILL, outline="")
             self.create_rectangle(0, split_y, width, height, fill=WHITE_SIDE_FILL, outline="")
-        self.create_rectangle(1, 1, width - 1, height - 1, outline=BORDER_COLOR)
+        # Flush border on all four edges (inset top/left looks like a floating
+        # frame, and the dark side blends into dark UI themes without it).
+        self.create_rectangle(0, 0, width - 1, height - 1, outline=BORDER_COLOR)
 
         label = self.message or (self.score.label if self.score is not None else "")
         if not label:

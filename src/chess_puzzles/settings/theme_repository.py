@@ -208,6 +208,24 @@ def built_in_ui_themes() -> dict[str, UiTheme]:
         menu_active_bg="#cba6f7",
         menu_active_text="#1e1e2e",
     )
+    forest = UiTheme(
+        id="forest",
+        name="Forest",
+        window_bg="#302e2b",
+        panel_bg="#2a2926",
+        sunken_bg="#262522",
+        text="#e6e4e0",
+        muted_text="#a8a39c",
+        accent="#81b64c",
+        border="#3d3a36",
+        button_bg="#3a3733",
+        button_active="#4a463f",
+        field_bg="#262522",
+        field_text="#e6e4e0",
+        menu_bg="#2a2926",
+        menu_active_bg="#81b64c",
+        menu_active_text="#ffffff",
+    )
     return {
         theme.id: theme
         for theme in (
@@ -221,6 +239,7 @@ def built_in_ui_themes() -> dict[str, UiTheme]:
             dracula,
             monokai,
             catppuccin_mocha,
+            forest,
         )
     }
 
