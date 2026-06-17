@@ -1,4 +1,4 @@
-"""Drill 2 -- undefended pieces: pieces with zero friendly defenders."""
+"""Drill 2 -- undefended/loose pieces: pieces not safely protected."""
 
 from __future__ import annotations
 
@@ -22,7 +22,7 @@ _SCOPE_CHOICES = (
 @dataclass(frozen=True, slots=True)
 class UndefendedDrill:
     id: ClassVar[str] = "undefended"
-    name: ClassVar[str] = "Undefended pieces"
+    name: ClassVar[str] = "Undefended / loose pieces"
     kind: ClassVar[DrillKind] = DrillKind.MULTI_CLICK
     OPTIONS: ClassVar[tuple[DrillOption, ...]] = (
         DrillOption("scope", "Pieces", _SCOPE_CHOICES),
@@ -33,7 +33,7 @@ class UndefendedDrill:
     include_pawns: bool = False
 
     def _answer(self, board: chess.Board) -> frozenset[int]:
-        return analysis.undefended(board, scope=self.scope, include_pawns=self.include_pawns)
+        return analysis.loose_pieces(board, scope=self.scope, include_pawns=self.include_pawns)
 
     def accepts(self, board: chess.Board) -> bool:
         return bool(self._answer(board))
@@ -42,7 +42,7 @@ class UndefendedDrill:
         return Question(
             fen=board.fen(),
             orientation=board.turn,
-            prompt="Click undefended pieces",
+            prompt="Click undefended or loose pieces",
             answer=self._answer(board),
         )
 

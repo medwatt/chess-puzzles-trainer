@@ -49,7 +49,7 @@ class ReachDrill:
         square = rng.choice(analysis.pieces_of_types(board, (self.piece_type,)))
         piece = board.piece_at(square)
         assert piece is not None  # accept() guaranteed a piece of this type
-        answer = analysis.reach(board, square, include_defended_squares=self.include_defended_squares)
+        answer = analysis.piece_reach(board, square, include_defended_squares=self.include_defended_squares)
         return Question(
             fen=board.fen(),
             orientation=piece.color,

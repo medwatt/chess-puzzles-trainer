@@ -1,14 +1,16 @@
 """Pure ground-truth computations for board vision drills.
 
-Every function takes a ``chess.Board`` and returns a ``frozenset`` of square
-indices -- the set of squares that count as a correct answer. They have no UI
-or randomness, so each one is directly unit-testable from a FEN. The drills in
-``vision/drills/`` are thin wrappers that call these and add prompt text.
+This module owns the chess logic behind the drills: pressure on a piece,
+same-square exchanges, checking moves, reach, and answer sets. It has no UI or
+randomness, so each concept is directly unit-testable from a FEN. The drills in
+``vision/drills/`` stay thin wrappers that call these functions and add prompt
+text.
 """
 
 from __future__ import annotations
 
 from collections.abc import Iterable
+from dataclasses import dataclass
 from enum import Enum
 
 import chess
@@ -39,13 +41,60 @@ def scope_colors(board: chess.Board, scope: ColorScope) -> tuple[chess.Color, ..
     return (not board.turn,)
 
 
-def undefended(
+@dataclass(frozen=True, slots=True)
+class PiecePressure:
+    """Direct pressure on one occupied square."""
+
+    square: int
+    piece: chess.Piece | None
+    attackers: frozenset[int]
+    defenders: frozenset[int]
+
+
+def piece_pressure(board: chess.Board, square: int) -> PiecePressure:
+    """Legal enemy attackers and direct friendly defenders of a piece."""
+    piece = board.piece_at(square)
+    if piece is None:
+        return PiecePressure(square, None, frozenset(), frozenset())
+    return PiecePressure(
+        square=square,
+        piece=piece,
+        attackers=frozenset(_legal_attackers(board, not piece.color, square)),
+        defenders=frozenset(board.attackers(piece.color, square)),
+    )
+
+
+def is_hanging(board: chess.Board, square: int) -> bool:
+    """Whether the piece on ``square`` can be won by a legal capture sequence."""
+    piece = board.piece_at(square)
+    if piece is None or piece.piece_type == chess.KING:
+        return False
+    return _can_be_won_by_capture(board, square, piece)
+
+
+def is_loose(board: chess.Board, square: int) -> bool:
+    """Whether the piece on ``square`` is not safely protected."""
+    pressure = piece_pressure(board, square)
+    piece = pressure.piece
+    if piece is None or piece.piece_type == chess.KING:
+        return False
+    if not pressure.defenders:
+        return True
+    return is_hanging(board, square)
+
+
+def loose_pieces(
     board: chess.Board,
     *,
     scope: ColorScope = ColorScope.BOTH,
     include_pawns: bool = False,
 ) -> frozenset[int]:
-    """Pieces with zero friendly defenders on their square (kings excluded)."""
+    """Pieces that are not safely protected on their square.
+
+    This is the broad "loose piece" scan used by the board-vision drill:
+    pieces with no defenders, and pieces that can be won by a same-square
+    exchange.
+    """
     colors = scope_colors(board, scope)
     result: set[int] = set()
     for square, piece in board.piece_map().items():
@@ -53,12 +102,12 @@ def undefended(
             continue
         if not _is_candidate(piece, include_pawns):
             continue
-        if not board.attackers(piece.color, square):
+        if is_loose(board, square):
             result.add(square)
     return frozenset(result)
 
 
-def hanging(
+def hanging_pieces(
     board: chess.Board,
     *,
     scope: ColorScope = ColorScope.BOTH,
@@ -76,12 +125,12 @@ def hanging(
             continue
         if not _is_candidate(piece, include_pawns):
             continue
-        if _can_be_won_by_capture(board, square, piece):
+        if is_hanging(board, square):
             result.add(square)
     return frozenset(result)
 
 
-def capturable(
+def capturable_pieces(
     board: chess.Board,
     *,
     scope: ColorScope = ColorScope.OPPONENT,
@@ -106,7 +155,7 @@ def capturable(
     return frozenset(result)
 
 
-def reach(
+def piece_reach(
     board: chess.Board,
     square: int,
     *,
@@ -212,16 +261,28 @@ def _is_candidate(piece: chess.Piece, include_pawns: bool) -> bool:
 def _can_be_won_by_capture(board: chess.Board, square: int, piece: chess.Piece) -> bool:
     enemy = not piece.color
     captured_value = _PIECE_VALUES[piece.piece_type]
-    for attacker_square in board.attackers(enemy, square):
+    for attacker_square in _legal_attackers(board, enemy, square):
         move = chess.Move(attacker_square, square)
-        test = board.copy(stack=False)
-        test.turn = enemy
-        if not test.is_legal(move):
-            continue
+        test = _with_turn(board, enemy)
         test.push(move)
         if captured_value - _best_exchange_gain(test, square) > 0:
             return True
     return False
+
+
+def _legal_attackers(board: chess.Board, color: chess.Color, square: int) -> chess.SquareSet:
+    test = _with_turn(board, color)
+    return chess.SquareSet(
+        attacker_square
+        for attacker_square in board.attackers(color, square)
+        if test.is_legal(chess.Move(attacker_square, square))
+    )
+
+
+def _with_turn(board: chess.Board, turn: chess.Color) -> chess.Board:
+    test = board.copy(stack=False)
+    test.turn = turn
+    return test
 
 
 def _legal_capture_targets_by(colors: set[chess.Color], board: chess.Board) -> set[int]:
