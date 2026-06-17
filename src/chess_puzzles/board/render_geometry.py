@@ -33,7 +33,15 @@ def coordinate_color(state: BoardRenderState, square: int) -> str:
 
 
 def coordinate_font_size(geometry: BoardGeometry) -> int:
-    return max(9, int(geometry.square_size * 0.16))
+    # Pixel size for both backends.
+    return max(9, round(geometry.square_size * 0.18))
+
+
+def coordinate_cap_height(geometry: BoardGeometry) -> int:
+    # Approximate digit cap height (~0.76 of the font size). Both backends place
+    # rank labels by their baseline this far below the top edge, so they end up
+    # in the same spot regardless of renderer.
+    return round(coordinate_font_size(geometry) * 0.76)
 
 
 @dataclass(frozen=True, slots=True)
@@ -47,7 +55,7 @@ class CoordinateLabel:
 
 def coordinate_labels(state: BoardRenderState, geometry: BoardGeometry) -> list[CoordinateLabel]:
     labels: list[CoordinateLabel] = []
-    pad = geometry.square_size * 0.10
+    pad = geometry.square_size * 0.075
     for display_file in range(8):
         square = geometry.square_from_display(display_file, 7, state.flipped)
         labels.append(

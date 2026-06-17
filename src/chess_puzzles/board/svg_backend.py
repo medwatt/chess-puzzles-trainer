@@ -9,6 +9,7 @@ from chess_puzzles.board.board_state import BoardRenderState, BoardSnapshot
 from chess_puzzles.board.geometry import BoardGeometry
 from chess_puzzles.board.render_geometry import (
     arrow_shape,
+    coordinate_cap_height,
     coordinate_font_size,
     coordinate_labels,
     square_fill,
@@ -59,10 +60,15 @@ _SVG_TEXT_ANCHORS = {"se": "end", "nw": "start"}
 
 def _coordinates(state: BoardRenderState, geometry: BoardGeometry) -> str:
     size = coordinate_font_size(geometry)
-    return "\n".join(
-        _text(label.x, label.y, label.text, label.color, size, _SVG_TEXT_ANCHORS[label.anchor])
-        for label in coordinate_labels(state, geometry)
-    )
+    cap = coordinate_cap_height(geometry)
+    parts: list[str] = []
+    for label in coordinate_labels(state, geometry):
+        # Position every label by its baseline (the default "alphabetic"), which
+        # renders the same in every SVG viewer. Rank digits ("nw") hang from the
+        # top edge, so drop their baseline by the cap height.
+        y = label.y + cap if label.anchor == "nw" else label.y
+        parts.append(_text(label.x, y, label.text, label.color, size, _SVG_TEXT_ANCHORS[label.anchor]))
+    return "\n".join(parts)
 
 
 def _selection(state: BoardRenderState, geometry: BoardGeometry) -> str:
@@ -253,20 +259,11 @@ def _rect(
     return f"<rect {' '.join(attrs)}/>"
 
 
-def _text(
-    x: float,
-    y: float,
-    value: str,
-    fill: str,
-    size: int,
-    anchor: str,
-    *,
-    baseline: str = "middle",
-) -> str:
+def _text(x: float, y: float, value: str, fill: str, size: int, anchor: str) -> str:
     return (
         f'<text x="{_fmt(x)}" y="{_fmt(y)}" fill="{html.escape(fill)}" '
-        f'font-family="Arial, sans-serif" font-size="{size}" font-weight="600" '
-        f'text-anchor="{anchor}" dominant-baseline="{baseline}">{html.escape(value)}</text>'
+        f'font-family="DejaVu Sans, Arial, sans-serif" font-size="{size}" font-weight="normal" '
+        f'text-anchor="{anchor}" dominant-baseline="alphabetic">{html.escape(value)}</text>'
     )
 
 

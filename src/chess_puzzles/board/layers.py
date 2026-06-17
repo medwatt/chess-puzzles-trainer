@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from tkinter import font as tkfont
 from typing import Protocol
 
 import chess
@@ -12,6 +13,7 @@ from chess_puzzles.board.geometry import BoardGeometry
 from chess_puzzles.board.images import BoardTextureCache, PieceImageCache
 from chess_puzzles.board.render_geometry import (
     arrow_shape,
+    coordinate_cap_height,
     coordinate_font_size,
     coordinate_labels,
     is_light_square,
@@ -97,10 +99,23 @@ class CoordinatesLayer(BaseLayer):
         self.clear()
         if not state.show_coordinates:
             return
-        font = ("TkDefaultFont", coordinate_font_size(geometry), "bold")
+        # Negative size = pixels, matching the SVG export (which is also in px)
+        # so the on-screen board and the exported SVG render identically.
+        font = ("TkDefaultFont", -coordinate_font_size(geometry), "normal")
+        metrics = tkfont.Font(font=font).metrics()
+        ascent, descent = metrics["ascent"], metrics["descent"]
+        cap = coordinate_cap_height(geometry)
         for label in coordinate_labels(state, geometry):
+            # Tk anchors by the text bounding box, so convert each label's edge
+            # reference into the baseline the SVG export also uses. Rank digits
+            # ("nw") hang a cap-height below the top edge; file letters ("se") sit
+            # on their baseline at the bottom edge (no descenders to account for).
+            if label.anchor == "nw":
+                y = label.y + cap - ascent
+            else:
+                y = label.y + descent
             self.backend.text(
-                self.name, label.x, label.y, text=label.text, fill=label.color, font=font, anchor=label.anchor
+                self.name, label.x, y, text=label.text, fill=label.color, font=font, anchor=label.anchor
             )
 
 

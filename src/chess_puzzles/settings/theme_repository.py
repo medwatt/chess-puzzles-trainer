@@ -263,12 +263,12 @@ def built_in_board_themes() -> dict[str, BoardTheme]:
     lichess_green = BoardTheme(
         id="lichess_green",
         name="Lichess Green",
-        light_square="#ffffdd",
-        dark_square="#86a666",
+        light_square="#ebecd0",
+        dark_square="#739552",
         selected_square="#f7ec6e",
         legal_target="#56723d",
-        coordinate_light="#86a666",
-        coordinate_dark="#ffffdd",
+        coordinate_light="#739552",
+        coordinate_dark="#ebecd0",
     )
     return {
         theme.id: theme
