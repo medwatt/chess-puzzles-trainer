@@ -10,11 +10,17 @@ text.
 from __future__ import annotations
 
 from collections.abc import Iterable
-from dataclasses import dataclass
 from enum import Enum
 
 import chess
 
+# Step deltas (file, rank) for sliding rays, split by the piece types that move
+# along them. Used to count X-ray / battery pressure through aligned sliders.
+_STRAIGHT_STEPS = ((1, 0), (-1, 0), (0, 1), (0, -1))
+_DIAGONAL_STEPS = ((1, 1), (1, -1), (-1, 1), (-1, -1))
+
+# Rough piece values, used only by the winnability check that filters which
+# count-hanging pieces the hanging drill actually serves (not by the count rule).
 _PIECE_VALUES: dict[chess.PieceType, int] = {
     chess.PAWN: 1,
     chess.KNIGHT: 3,
@@ -41,46 +47,64 @@ def scope_colors(board: chess.Board, scope: ColorScope) -> tuple[chess.Color, ..
     return (not board.turn,)
 
 
-@dataclass(frozen=True, slots=True)
-class PiecePressure:
-    """Direct pressure on one occupied square."""
+def pressure(board: chess.Board, square: int, color: chess.Color) -> frozenset[int]:
+    """``color`` pieces bearing on ``square`` -- direct attackers/defenders plus
+    indirect X-ray/battery pieces along the same line, minus any piece that could
+    not actually move onto the square (pinned, or unable to act because its own
+    king is in check).
 
-    square: int
-    piece: chess.Piece | None
-    attackers: frozenset[int]
-    defenders: frozenset[int]
+    This is the counting primitive the loose/hanging drills are built on: count
+    attackers and defenders, include X-rays, and discount pieces that cannot move.
+    """
+    target = board.piece_at(square)
+    if target is not None and color != target.color and color == board.turn and board.is_check():
+        # The attacking side is in check: its only legal move is one that resolves
+        # the check, so a piece bears on the square only if capturing there is
+        # actually legal right now (an X-ray piece can never be that move).
+        return frozenset(
+            sq for sq in board.attackers(color, square) if board.is_legal(chess.Move(sq, square))
+        )
+    candidates = set(board.attackers(color, square)) | _xray_sliders(board, square, color)
+    return frozenset(sq for sq in candidates if _can_move_onto(board, sq, square))
 
 
-def piece_pressure(board: chess.Board, square: int) -> PiecePressure:
-    """Legal enemy attackers and direct friendly defenders of a piece."""
+def pressure_counts(board: chess.Board, square: int) -> tuple[int, int]:
+    """``(attackers, defenders)`` on ``square`` under the same counting rules."""
     piece = board.piece_at(square)
     if piece is None:
-        return PiecePressure(square, None, frozenset(), frozenset())
-    return PiecePressure(
-        square=square,
-        piece=piece,
-        attackers=frozenset(_legal_attackers(board, not piece.color, square)),
-        defenders=frozenset(board.attackers(piece.color, square)),
+        return (0, 0)
+    return (
+        len(pressure(board, square, not piece.color)),
+        len(pressure(board, square, piece.color)),
     )
 
 
 def is_hanging(board: chess.Board, square: int) -> bool:
-    """Whether the piece on ``square`` can be won by a legal capture sequence."""
+    """Whether ``square`` has strictly more attackers than defenders.
+
+    A pure count (X-ray-aware, pin-discounted): a piece that is more attacked than
+    defended. Whether it can actually be won is a separate calculation the drill
+    deliberately leaves out.
+    """
     piece = board.piece_at(square)
     if piece is None or piece.piece_type == chess.KING:
         return False
-    return _can_be_won_by_capture(board, square, piece)
+    attackers, defenders = pressure_counts(board, square)
+    return attackers > defenders
 
 
 def is_loose(board: chess.Board, square: int) -> bool:
-    """Whether the piece on ``square`` is not safely protected."""
-    pressure = piece_pressure(board, square)
-    piece = pressure.piece
+    """Whether ``square`` has equally many attackers and defenders.
+
+    Balanced now, but one removed defender or one new attacker away from hanging.
+    A piece with no pressure at all (0 vs 0) counts as loose too; the drill can
+    filter those out via ``contested_only``.
+    """
+    piece = board.piece_at(square)
     if piece is None or piece.piece_type == chess.KING:
         return False
-    if not pressure.defenders:
-        return True
-    return is_hanging(board, square)
+    attackers, defenders = pressure_counts(board, square)
+    return attackers == defenders
 
 
 def loose_pieces(
@@ -88,23 +112,49 @@ def loose_pieces(
     *,
     scope: ColorScope = ColorScope.BOTH,
     include_pawns: bool = False,
+    contested_only: bool = False,
 ) -> frozenset[int]:
-    """Pieces that are not safely protected on their square.
+    """Pieces with as many attackers as defenders.
 
-    This is the broad "loose piece" scan used by the board-vision drill:
-    pieces with no defenders, and pieces that can be won by a same-square
-    exchange.
+    With ``contested_only`` the untouched pieces that have no attacker at all
+    (0 vs 0) are dropped, leaving the genuinely contested targets.
     """
     colors = scope_colors(board, scope)
     result: set[int] = set()
     for square, piece in board.piece_map().items():
-        if piece.color not in colors:
+        if piece.color not in colors or not _is_candidate(piece, include_pawns):
             continue
-        if not _is_candidate(piece, include_pawns):
+        attackers, defenders = pressure_counts(board, square)
+        if attackers != defenders or (contested_only and attackers == 0):
             continue
-        if is_loose(board, square):
-            result.add(square)
+        result.add(square)
     return frozenset(result)
+
+
+def is_winnable(board: chess.Board, square: int) -> bool:
+    """Whether the piece on ``square`` can be won by a legal capture sequence.
+
+    A value-aware static exchange (the full recapture search in
+    ``_best_exchange_gain``): used only to filter which count-hanging pieces the
+    drill actually serves, so the player is never shown a piece that is "hanging"
+    by count yet cannot be taken (e.g. a knight defended by a pawn but attacked
+    only by a queen and a rook).
+    """
+    piece = board.piece_at(square)
+    if piece is None or piece.piece_type == chess.KING:
+        return False
+    enemy = not piece.color
+    captured_value = _PIECE_VALUES[piece.piece_type]
+    test = _with_turn(board, enemy)
+    for attacker_square in board.attackers(enemy, square):
+        move = chess.Move(attacker_square, square)
+        if not test.is_legal(move):
+            continue
+        after = test.copy(stack=False)
+        after.push(move)
+        if captured_value - _best_exchange_gain(after, square) > 0:
+            return True
+    return False
 
 
 def hanging_pieces(
@@ -112,20 +162,21 @@ def hanging_pieces(
     *,
     scope: ColorScope = ColorScope.BOTH,
     include_pawns: bool = False,
+    winnable_only: bool = False,
 ) -> frozenset[int]:
-    """Pieces an enemy can legally capture for material gain.
+    """Pieces with strictly more attackers than defenders.
 
-    This uses a small static exchange evaluator on the target square. It is
-    still engine-free, but handles pinned pieces and longer recapture chains.
+    With ``winnable_only`` the result is narrowed to pieces that can actually be
+    won by a capture sequence (``is_winnable``), dropping the count's value-losing
+    false positives so the drill does not pose pieces the player cannot take.
     """
     colors = scope_colors(board, scope)
     result: set[int] = set()
     for square, piece in board.piece_map().items():
-        if piece.color not in colors:
+        if piece.color not in colors or not _is_candidate(piece, include_pawns):
             continue
-        if not _is_candidate(piece, include_pawns):
-            continue
-        if is_hanging(board, square):
+        attackers, defenders = pressure_counts(board, square)
+        if attackers > defenders and (not winnable_only or is_winnable(board, square)):
             result.add(square)
     return frozenset(result)
 
@@ -258,25 +309,48 @@ def _is_candidate(piece: chess.Piece, include_pawns: bool) -> bool:
     return True
 
 
-def _can_be_won_by_capture(board: chess.Board, square: int, piece: chess.Piece) -> bool:
-    enemy = not piece.color
-    captured_value = _PIECE_VALUES[piece.piece_type]
-    for attacker_square in _legal_attackers(board, enemy, square):
-        move = chess.Move(attacker_square, square)
-        test = _with_turn(board, enemy)
-        test.push(move)
-        if captured_value - _best_exchange_gain(test, square) > 0:
-            return True
-    return False
+def _xray_sliders(board: chess.Board, square: int, color: chess.Color) -> set[int]:
+    """``color`` sliders bearing on ``square`` along a rank/file/diagonal, seeing
+    *through* aligned sliders (batteries and X-rays).
+
+    A ray stays transparent only while the pieces on it are sliders that move
+    along that ray (rook/queen on straights, bishop/queen on diagonals), of either
+    colour -- a queen behind an enemy bishop on the same diagonal still bears on
+    the square. Any other piece (knight, pawn, king, off-line slider) blocks the
+    ray.
+    """
+    result: set[int] = set()
+    file0, rank0 = chess.square_file(square), chess.square_rank(square)
+    for steps, line_types in (
+        (_STRAIGHT_STEPS, (chess.ROOK, chess.QUEEN)),
+        (_DIAGONAL_STEPS, (chess.BISHOP, chess.QUEEN)),
+    ):
+        for dfile, drank in steps:
+            file_, rank_ = file0 + dfile, rank0 + drank
+            while 0 <= file_ < 8 and 0 <= rank_ < 8:
+                sq = chess.square(file_, rank_)
+                piece = board.piece_at(sq)
+                if piece is not None:
+                    if piece.piece_type not in line_types:
+                        break
+                    if piece.color == color:
+                        result.add(sq)
+                file_ += dfile
+                rank_ += drank
+    return result
 
 
-def _legal_attackers(board: chess.Board, color: chess.Color, square: int) -> chess.SquareSet:
-    test = _with_turn(board, color)
-    return chess.SquareSet(
-        attacker_square
-        for attacker_square in board.attackers(color, square)
-        if test.is_legal(chess.Move(attacker_square, square))
-    )
+def _can_move_onto(board: chess.Board, origin: int, target: int) -> bool:
+    """Whether the piece on ``origin`` is free to move to ``target`` (not pinned away).
+
+    A piece pinned to its king may only move along the pin line, so it cannot
+    truly attack or defend a square off that line -- a pinned piece is a poor
+    defender. Unpinned pieces (and the king) are always free here.
+    """
+    color = board.color_at(origin)
+    if color is None:
+        return False
+    return target in board.pin(color, origin)
 
 
 def _with_turn(board: chess.Board, turn: chess.Color) -> chess.Board:
@@ -285,20 +359,13 @@ def _with_turn(board: chess.Board, turn: chess.Color) -> chess.Board:
     return test
 
 
-def _legal_capture_targets_by(colors: set[chess.Color], board: chess.Board) -> set[int]:
-    targets: set[int] = set()
-    for color in colors:
-        test = board.copy(stack=False)
-        test.turn = color
-        targets.update(
-            move.to_square
-            for move in test.legal_moves
-            if test.is_capture(move) and not test.is_en_passant(move)
-        )
-    return targets
-
-
 def _best_exchange_gain(board: chess.Board, square: int) -> int:
+    """Best material the side to move can win from captures on ``square`` (>= 0).
+
+    Recursive exchange search: at each ply the mover may capture (with any legal
+    attacker) or stand pat at 0, so it follows the full recapture chain rather
+    than stopping after one level.
+    """
     captured = board.piece_at(square)
     if captured is None:
         return 0
@@ -313,6 +380,19 @@ def _best_exchange_gain(board: chess.Board, square: int) -> int:
         if gain > best:
             best = gain
     return best
+
+
+def _legal_capture_targets_by(colors: set[chess.Color], board: chess.Board) -> set[int]:
+    targets: set[int] = set()
+    for color in colors:
+        test = board.copy(stack=False)
+        test.turn = color
+        targets.update(
+            move.to_square
+            for move in test.legal_moves
+            if test.is_capture(move) and not test.is_en_passant(move)
+        )
+    return targets
 
 
 def pieces_of_types(board: chess.Board, piece_types: Iterable[chess.PieceType]) -> list[int]:

@@ -16,8 +16,8 @@ from chess_puzzles.vision.drills import (
     king_zone,
     localization,
     long_range,
+    loose,
     reach,
-    undefended,
 )
 
 
@@ -50,7 +50,7 @@ registry = DrillRegistry()
 for _drill in (
     checks.drill,
     captures.drill,
-    undefended.drill,
+    loose.drill,
     hanging.drill,
     attackers.drill,
     long_range.drill,

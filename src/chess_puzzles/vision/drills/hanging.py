@@ -43,7 +43,9 @@ class HangingDrill:
     negative_rate: float = 0.0
 
     def _answer(self, board: chess.Board) -> frozenset[int]:
-        return analysis.hanging_pieces(board, scope=self.scope, include_pawns=self.include_pawns)
+        return analysis.hanging_pieces(
+            board, scope=self.scope, include_pawns=self.include_pawns, winnable_only=True
+        )
 
     def accepts(self, board: chess.Board) -> bool:
         return bool(self._answer(board))
