@@ -7,6 +7,7 @@ import chess
 from chess_puzzles.vision import analysis
 from chess_puzzles.vision.analysis import ColorScope
 from chess_puzzles.vision.drills.captures import CapturesDrill
+from chess_puzzles.vision.drills.hanging import HangingDrill
 from chess_puzzles.vision.drills.long_range import LongRangeAttackDrill
 from chess_puzzles.vision.drills.loose import LooseDrill
 
@@ -83,6 +84,58 @@ def test_pressure_discounts_pinned_attacker() -> None:
     board = chess.Board("4k3/8/8/3n4/8/K2R3r/8/8 w - - 0 1")
     assert analysis.pressure(board, chess.D5, chess.WHITE) == frozenset()
     assert not analysis.is_hanging(board, chess.D5)
+
+
+def test_xray_does_not_pass_through_a_pinned_battery_member() -> None:
+    # Rf1 sits behind Rf2, which is pinned to g1 along the a7-g1 diagonal by Qb6 and
+    # can never leave the f-file's line of fire. The dead battery must not lend f1 as
+    # a phantom attacker: f6 reads 1-vs-3 (Qe5 only) and f8 has no real attacker.
+    board = chess.Board("k4r2/1p2p3/pq3r2/3PQ1p1/2P5/1P4P1/P4RB1/5RK1 w - - 0 1")
+    assert analysis.pressure(board, chess.F6, chess.WHITE) == _squares("e5")
+    assert analysis.pressure_counts(board, chess.F6) == (1, 3)
+    assert analysis.pressure(board, chess.F8, chess.WHITE) == frozenset()
+    assert not analysis.is_loose(board, chess.F8)
+    assert analysis.loose_pieces(board, scope=ColorScope.OPPONENT) == frozenset()
+
+
+def test_xray_passes_through_a_capturing_pawn_on_the_diagonal() -> None:
+    # c3 pawn attacks the d4 knight and, by capturing, opens the a1-h8 diagonal for
+    # the b2 bishop queued behind it -- so d4 has two attackers (pawn + bishop) vs
+    # one defender (c5 bishop) and is hanging, not loose.
+    board = chess.Board("5rk1/pp4pp/2p5/2bp2q1/3n4/1PP4b/PBQ1R1BP/1N5K w - - 0 1")
+    assert analysis.pressure(board, chess.D4, chess.WHITE) == _squares("c3 b2")
+    assert analysis.pressure_counts(board, chess.D4) == (2, 1)
+    assert analysis.is_hanging(board, chess.D4)
+    assert not analysis.is_loose(board, chess.D4)
+
+
+def test_xray_does_not_pass_through_a_pawn_that_cannot_capture_the_square() -> None:
+    # A pawn directly in front of a rook on a file does not capture forward, so it
+    # never vacates the file: the rook behind it must stay blocked (0 attackers).
+    board = chess.Board("3r4/8/8/8/8/3P4/3R4/3K1k2 w - - 0 1")
+    assert analysis.pressure(board, chess.D8, chess.WHITE) == frozenset()
+
+
+def test_winnable_pieces_flags_value_loss_without_being_outnumbered() -> None:
+    # Nd4 is defended once (Bc5) and attacked once (c3 pawn): balanced by count, so
+    # not hanging -- yet a pawn winning a knight is real material loss, so winnable.
+    board = chess.Board("4k3/8/8/2b5/3n4/2P5/8/4K3 w - - 0 1")
+    assert analysis.pressure_counts(board, chess.D4) == (1, 1)
+    assert not analysis.is_hanging(board, chess.D4)
+    assert analysis.winnable_pieces(board, scope=ColorScope.OPPONENT) == _squares("d4")
+
+
+def test_winnable_pieces_ignores_equal_trades() -> None:
+    # Nd4 attacked by Be4, defended by c6 pawn: capturing is an even 3-for-3 trade,
+    # so nothing is winnable.
+    board = chess.Board("4k3/8/2p5/3n4/4B3/8/8/4K3 w - - 0 1")
+    assert analysis.winnable_pieces(board, scope=ColorScope.OPPONENT) == frozenset()
+
+
+def test_hanging_drill_winnable_option_extends_to_value_loss() -> None:
+    board = chess.Board("4k3/8/8/2b5/3n4/2P5/8/4K3 w - - 0 1")
+    assert HangingDrill()._answer(board) == _squares("d4")  # value-aware default
+    assert HangingDrill(winnable=False)._answer(board) == frozenset()  # strict count
 
 
 def test_counts_classify_a_full_position() -> None:

@@ -33,16 +33,26 @@ class HangingDrill:
     OPTIONS: ClassVar[tuple[DrillOption, ...]] = (
         DrillOption("scope", "Pieces", _SCOPE_CHOICES),
         DrillOption("include_pawns", "Include pawns"),
+        DrillOption("winnable", "Winnable"),
         DrillOption("negative_rate", "Negatives", _NEGATIVE_CHOICES),
     )
 
     scope: ColorScope = ColorScope.OPPONENT
     include_pawns: bool = False
+    # When set (the default), "hanging" means value-aware winnable (a piece losing
+    # material to a cheaper attacker, e.g. a knight attacked by a pawn yet defended
+    # once) rather than the pure count of more attackers than defenders. Turn off to
+    # get the strict count-based set (more attackers than defenders, then winnable).
+    winnable: bool = True
     # Opt-in seam read by VisionSession: when > 0 it draws empty-answer positions
     # at this rate using negative_accepts. Drills without these stay positive-only.
     negative_rate: float = 0.0
 
     def _answer(self, board: chess.Board) -> frozenset[int]:
+        if self.winnable:
+            return analysis.winnable_pieces(
+                board, scope=self.scope, include_pawns=self.include_pawns
+            )
         return analysis.hanging_pieces(
             board, scope=self.scope, include_pawns=self.include_pawns, winnable_only=True
         )

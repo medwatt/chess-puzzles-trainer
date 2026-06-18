@@ -1,6 +1,6 @@
 [project]
 name = "chess-puzzles-trainer"
-version = "1.0.3"
+version = "1.0.4"
 description = "Desktop chess puzzle trainer with engine analysis and play-vs-engine mode."
 requires-python = ">=3.11"
 dependencies = [

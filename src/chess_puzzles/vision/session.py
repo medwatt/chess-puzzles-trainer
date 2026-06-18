@@ -21,7 +21,8 @@ from chess_puzzles.vision.drill import (
     negative_accepts,
     negative_rate,
 )
-from chess_puzzles.vision.source import Accepts, PositionSource
+from chess_puzzles.vision.filters import Accepts, not_in_check
+from chess_puzzles.vision.source import PositionSource
 
 
 @dataclass(slots=True)
@@ -78,12 +79,18 @@ class VisionSession:
         """Usually the drill's positive filter, but occasionally an empty-answer
         one for drills that opt into negative trials. Drills that don't expose
         negatives are unaffected. (A rarely-satisfied negative filter makes the
-        source scan harder, so keep negative positions reasonably common.)"""
+        source scan harder, so keep negative positions reasonably common.)
+
+        Every filter is wrapped to reject positions where the side to move is in
+        check: the attacker/defender counts collapse there (only check-resolving
+        captures are legal), manufacturing confusing "loose"/"hanging" answers,
+        and being shown a board you must respond to a check on is jarring for a
+        calm perception drill."""
         rate = negative_rate(self.drill)
         negative = negative_accepts(self.drill)
         if rate and negative is not None and self._rng.random() < rate:
-            return negative
-        return self.drill.accepts
+            return not_in_check(negative)
+        return not_in_check(self.drill.accepts)
 
     def toggle(self, square: int) -> None:
         """Register a click. Single-click drills keep only the latest square."""

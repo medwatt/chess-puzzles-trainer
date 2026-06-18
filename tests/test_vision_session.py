@@ -123,6 +123,41 @@ def test_hanging_negative_trial_poses_an_empty_answer() -> None:
     assert result.passed is True and session.stats.passed == 1
 
 
+# Nothing loose (black Bf8 defended by its king, unattacked) vs a lone loose
+# black knight on d5 (attacked by Bg2, defended by the c6 pawn). Scope=opponent.
+_NO_LOOSE_FEN = "4kb2/8/8/8/8/8/8/4K3 w - - 0 1"
+_LOOSE_FEN = "4k3/8/2p5/3n4/8/8/6B1/4K3 w - - 0 1"
+
+
+def test_loose_default_draws_only_positive_positions() -> None:
+    drill = registry.get("loose")
+    assert getattr(drill, "negative_rate", 0.0) == 0.0
+    session = VisionSession(drill, ListPositionSource((_NO_LOOSE_FEN, _LOOSE_FEN)), rng=random.Random(0))
+    question = session.next_question()
+    assert question.answer  # positive-only: never the calm board
+
+
+def test_loose_negative_trial_poses_an_empty_answer() -> None:
+    drill = dataclasses.replace(registry.get("loose"), negative_rate=1.0)
+    session = VisionSession(drill, ListPositionSource((_NO_LOOSE_FEN, _LOOSE_FEN)), rng=random.Random(0))
+    question = session.next_question()
+    assert question.answer == frozenset()  # only the calm board qualifies
+    result = session.submit()  # zero clicks exactly matches the empty answer
+    assert result.passed is True and session.stats.passed == 1
+
+
+# White to move is in check (Black queen on a1 rakes the first rank at e1). The
+# in-check pressure rule zeroes every attacker count, so the loose drill would
+# otherwise serve a8/c8/a1 as 0-vs-0 "loose" pieces -- confusing nonsense.
+_IN_CHECK_FEN = "rnb2Q2/3p1N1k/1p4p1/2ppP2p/7P/1P4P1/P4P2/q3K1NR w - - 0 1"
+
+
+def test_in_check_positions_are_never_served() -> None:
+    session = _session("loose", (_IN_CHECK_FEN,), _FixedClock())
+    with pytest.raises(PositionUnavailable):
+        session.next_question()
+
+
 def test_captures_is_registered_after_checks() -> None:
     ids = registry.ids()
     assert ids[ids.index("checks") + 1] == "captures"

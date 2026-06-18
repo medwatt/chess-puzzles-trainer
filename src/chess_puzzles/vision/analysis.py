@@ -181,6 +181,30 @@ def hanging_pieces(
     return frozenset(result)
 
 
+def winnable_pieces(
+    board: chess.Board,
+    *,
+    scope: ColorScope = ColorScope.BOTH,
+    include_pawns: bool = False,
+) -> frozenset[int]:
+    """Pieces that can be won by a legal capture sequence (value-aware).
+
+    Unlike ``hanging_pieces``, this does not require more attackers than defenders:
+    a piece defended exactly as many times as it is attacked is still winnable when
+    the attackers are cheaper -- a knight defended once but attacked by a pawn. It
+    is the practical "material is being lost here" set, the count-blind complement
+    to the pure-count hanging rule.
+    """
+    colors = scope_colors(board, scope)
+    result: set[int] = set()
+    for square, piece in board.piece_map().items():
+        if piece.color not in colors or not _is_candidate(piece, include_pawns):
+            continue
+        if is_winnable(board, square):
+            result.add(square)
+    return frozenset(result)
+
+
 def capturable_pieces(
     board: chess.Board,
     *,
@@ -316,8 +340,13 @@ def _xray_sliders(board: chess.Board, square: int, color: chess.Color) -> set[in
     A ray stays transparent only while the pieces on it are sliders that move
     along that ray (rook/queen on straights, bishop/queen on diagonals), of either
     colour -- a queen behind an enemy bishop on the same diagonal still bears on
-    the square. Any other piece (knight, pawn, king, off-line slider) blocks the
-    ray.
+    the square. Any other piece (knight, king, off-line slider) blocks the ray.
+
+    One exception keeps the count honest on diagonals: a ``color`` pawn that
+    *attacks* the square captures onto it, vacating its own square and opening the
+    diagonal behind it, so a bishop/queen queued behind such a pawn joins the
+    exchange. That pawn is transparent (but only when it could actually capture --
+    not pinned away); any other pawn still blocks.
     """
     result: set[int] = set()
     file0, rank0 = chess.square_file(square), chess.square_rank(square)
@@ -331,9 +360,21 @@ def _xray_sliders(board: chess.Board, square: int, color: chess.Color) -> set[in
                 sq = chess.square(file_, rank_)
                 piece = board.piece_at(sq)
                 if piece is not None:
-                    if piece.piece_type not in line_types:
+                    # A free ``color`` pawn attacking the square is transparent: its
+                    # capture vacates the square and opens the line (see docstring).
+                    pawn_battery = (
+                        piece.piece_type == chess.PAWN
+                        and piece.color == color
+                        and square in board.attacks(sq)
+                        and _can_move_onto(board, sq, square)
+                    )
+                    if piece.piece_type not in line_types and not pawn_battery:
                         break
-                    if piece.color == color:
+                    if piece.piece_type in line_types and piece.color == color:
+                        # A pinned battery member cannot vacate, so nothing behind
+                        # it can ever fire: treat it as a hard blocker.
+                        if not _can_move_onto(board, sq, square):
+                            break
                         result.add(sq)
                 file_ += dfile
                 rank_ += drank

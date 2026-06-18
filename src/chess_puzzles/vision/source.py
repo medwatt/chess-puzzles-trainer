@@ -10,12 +10,13 @@ a handful of lines -- no precomputed index needed. Tests inject the in-memory
 from __future__ import annotations
 
 import random
-from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
 
 import chess
+
+from chess_puzzles.vision.filters import Accepts
 
 # Lichess CSV columns: PuzzleId, FEN, Moves, ...
 _FEN_COLUMN = 1
@@ -23,8 +24,6 @@ _FEN_COLUMN = 1
 _SCAN_LINES = 4000
 # How many random seeks to try before giving up on a drill's filter.
 _MAX_SEEKS = 64
-
-Accepts = Callable[[chess.Board], bool]
 
 
 class PositionUnavailable(RuntimeError):

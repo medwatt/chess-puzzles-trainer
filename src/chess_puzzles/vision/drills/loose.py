@@ -22,6 +22,12 @@ _SCOPE_CHOICES = (
     ("Side to move", ColorScope.SIDE_TO_MOVE),
     ("Opponent", ColorScope.OPPONENT),
 )
+# Share of trials that should be "nothing loose" positions, so the user is
+# trained to confidently reject a calm board rather than always finding a target.
+_NEGATIVE_CHOICES = (
+    ("Off", 0.0),
+    ("Sometimes", 0.25),
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -33,6 +39,7 @@ class LooseDrill:
         DrillOption("scope", "Pieces", _SCOPE_CHOICES),
         DrillOption("include_pawns", "Include pawns"),
         DrillOption("contested_only", "Contested only"),
+        DrillOption("negative_rate", "Negatives", _NEGATIVE_CHOICES),
     )
 
     scope: ColorScope = ColorScope.OPPONENT
@@ -40,6 +47,9 @@ class LooseDrill:
     # When set, drop the untouched 0-vs-0 pieces and train only the contested
     # (1-1, 2-2, ...) targets.
     contested_only: bool = False
+    # Opt-in seam read by VisionSession: when > 0 it draws empty-answer positions
+    # at this rate using negative_accepts. Drills without these stay positive-only.
+    negative_rate: float = 0.0
 
     def _answer(self, board: chess.Board) -> frozenset[int]:
         return analysis.loose_pieces(
@@ -49,13 +59,18 @@ class LooseDrill:
             contested_only=self.contested_only,
         )
 
-    def accepts(self, board: chess.Board) -> bool:
+    def _has_hanging(self, board: chess.Board) -> bool:
         # Skip positions that contain an outnumbered (hanging) piece: being asked
-        # to click only *balanced* pieces while a piece sits in clear danger is
-        # confusing, so every piece in a served position is balanced or safe.
-        if analysis.hanging_pieces(board, scope=self.scope, include_pawns=self.include_pawns):
-            return False
-        return bool(self._answer(board))
+        # to judge balanced pieces while a piece sits in clear danger is confusing,
+        # so every served position (positive or negative) is free of hanging pieces.
+        return bool(analysis.hanging_pieces(board, scope=self.scope, include_pawns=self.include_pawns))
+
+    def accepts(self, board: chess.Board) -> bool:
+        return not self._has_hanging(board) and bool(self._answer(board))
+
+    def negative_accepts(self, board: chess.Board) -> bool:
+        """A calm position with nothing loose (and nothing hanging) in scope."""
+        return not self._has_hanging(board) and not self._answer(board)
 
     def make_question(self, board: chess.Board, rng: random.Random) -> Question:
         return Question(
