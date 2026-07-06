@@ -17,6 +17,7 @@ from chess_puzzles.lichess import (
     LichessImportDialog,
     save_lichess_settings,
 )
+from chess_puzzles.review import DueReview, due_reviews
 from chess_puzzles.store import ContentDatabase, ContentMeta, FavoriteRef, now_iso
 
 if TYPE_CHECKING:
@@ -207,6 +208,7 @@ class MainDatabaseActions:
         path: Path | None,
         *,
         favorites_view: bool,
+        review_view: bool = False,
         start_index: int,
         title: str,
         empty_status: str,
@@ -219,6 +221,7 @@ class MainDatabaseActions:
         window.database = database
         window.database_path = path
         window.favorites_view = favorites_view
+        window.review_view = review_view
         if not favorites_view:
             window.favorite_sources = []
         window.current_index = start_index if database.count() else -1
@@ -319,13 +322,68 @@ class MainDatabaseActions:
                 db.close()
         return favorites
 
-    def _use_favorites_view(self, favorites, label: str) -> None:
+    def review_mistakes(self) -> None:
+        """Serve the puzzles due for review as an in-memory deck.
+
+        Solving them records attempts as usual, which is what reschedules them:
+        due-ness is derived from the attempt log, so there is no review state
+        to update here."""
+        window = self.window
+        due = due_reviews(window.user_store.connection)
+        pairs = self._resolve_reviews(due)
+        if not pairs:
+            window._status_var.set("No puzzles due for review.")
+            return
+        self._use_favorites_view(pairs, f"Review — {len(pairs)} due", review=True)
+
+    def _resolve_reviews(self, due: list[DueReview]):
+        """Map due reviews to their puzzle content, preserving most-overdue order.
+
+        Attempts recorded before the locator migration have no path; those
+        puzzles are served only when the currently open deck contains them."""
+        window = self.window
+        resolved = []
+        by_path: dict[Path, list[tuple[int, DueReview]]] = {}
+        for order, item in enumerate(due):
+            if item.database_path:
+                by_path.setdefault(Path(item.database_path), []).append((order, item))
+            elif window.database is not None and not window.favorites_view:
+                puzzle = window.database.puzzle_by_id(item.puzzle_id)
+                if puzzle is not None:
+                    ref = FavoriteRef(item.puzzle_id, window.database.database_id, str(window.database_path))
+                    resolved.append((order, puzzle, ref))
+        for path, items in by_path.items():
+            if not path.exists():
+                continue
+            try:
+                db = ContentDatabase.open(path)
+            except (OSError, sqlite3.DatabaseError, ValueError):
+                continue
+            try:
+                for order, item in items:
+                    if item.database_id != db.database_id:
+                        continue
+                    puzzle = db.puzzle_by_id(item.puzzle_id)
+                    if puzzle is not None:
+                        resolved.append((order, puzzle, FavoriteRef(item.puzzle_id, item.database_id, item.database_path)))
+            finally:
+                db.close()
+        resolved.sort(key=lambda entry: entry[0])
+        return [(puzzle, ref) for _order, puzzle, ref in resolved]
+
+    def _use_favorites_view(self, favorites, label: str, *, review: bool = False) -> None:
         puzzles = [puzzle for puzzle, _source in favorites]
         self.window.favorite_sources = [source for _puzzle, source in favorites]
         meta = ContentMeta(database_id="favorites", name=label, created_at=now_iso(), updated_at=now_iso())
         view = ContentDatabase.in_memory(meta, puzzles)
         self._activate_database(
-            view, None, favorites_view=True, start_index=0, title=label, empty_status="No favorites."
+            view,
+            None,
+            favorites_view=True,
+            review_view=review,
+            start_index=0,
+            title=label,
+            empty_status="No favorites.",
         )
 
     def delete_current_puzzle(self) -> None:

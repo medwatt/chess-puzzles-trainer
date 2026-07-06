@@ -72,6 +72,7 @@ def test_unfavorite_from_favorites_view_removes_visible_source(tmp_path: Path) -
     window = MainWindow.__new__(MainWindow)
     window.session = SimpleNamespace(puzzle=SimpleNamespace(puzzle_id="p1"))
     window.favorites_view = True
+    window.review_view = False
     window.current_index = 0
     window.favorite_sources = [source]
     window.user_store = user_store

@@ -64,6 +64,17 @@ CREATE TABLE IF NOT EXISTS ui_state (
 """
 
 
+# Migration appended after VISION_SCHEMA_SQL (see _USER_MIGRATIONS): adds the
+# deck locator to attempts so the review queue can find a due puzzle's content
+# without that deck being open (the same locator the favorite table carries).
+# Attempts recorded before this migration keep '' and resolve against the
+# currently open deck until the puzzle is attempted once more.
+ATTEMPT_LOCATOR_SQL = """
+ALTER TABLE attempt ADD COLUMN database_id TEXT NOT NULL DEFAULT '';
+ALTER TABLE attempt ADD COLUMN database_path TEXT NOT NULL DEFAULT '';
+"""
+
+
 # Migration appended after USER_SCHEMA_SQL (see _USER_MIGRATIONS): adds the
 # board-vision drill history. tp/fp/fn store the per-square true-positive /
 # false-positive / false-negative counts so richer scoring (precision/recall)

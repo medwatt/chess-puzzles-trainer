@@ -9,7 +9,7 @@ from chess_puzzles.store.userdata import Attempt, UserStore, VisionAttempt
 from chess_puzzles.vision.stats import vision_summary
 
 # Bumped whenever a migration is appended to _USER_MIGRATIONS.
-CURRENT_USER_VERSION = 2
+CURRENT_USER_VERSION = 3
 
 
 def _attempt(outcome: str = "solved") -> Attempt:

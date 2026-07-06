@@ -108,6 +108,10 @@ class MainWindow:
         self.database: ContentDatabase | None = None
         self.database_path: Path | None = None
         self.favorites_view = False
+        # A favorites-style list view serving the review queue: the favorite
+        # button toggles against the puzzle's source deck instead of removing
+        # the puzzle from the list.
+        self.review_view = False
         self.favorite_sources: list[FavoriteRef] = []
         self.active_theme = ""
 
@@ -942,6 +946,7 @@ class MainWindow:
     def _record_solve(self) -> None:
         if self._visit_recorded or self.session is None:
             return
+        database_id, database_path = self._attempt_locator()
         self.user_store.record_attempt(
             Attempt(
                 puzzle_id=self.session.puzzle.puzzle_id,
@@ -951,6 +956,8 @@ class MainWindow:
                 aids=self.session.aids_used,
                 grade=grade_solve(self.session.mistakes, self.session.aids_used),
                 duration_ms=self._visit_duration_ms(),
+                database_id=database_id,
+                database_path=database_path,
             )
         )
         self._visit_recorded = True
@@ -961,6 +968,7 @@ class MainWindow:
             return
         if self.session.is_complete:
             return
+        database_id, database_path = self._attempt_locator()
         self.user_store.record_attempt(
             Attempt(
                 puzzle_id=self.session.puzzle.puzzle_id,
@@ -970,10 +978,24 @@ class MainWindow:
                 aids=self.session.aids_used,
                 grade="again",
                 duration_ms=self._visit_duration_ms(),
+                database_id=database_id,
+                database_path=database_path,
             )
         )
         self._visit_recorded = True
         self._refresh_session_stats()
+
+    def _attempt_locator(self) -> tuple[str, str]:
+        """Where the current puzzle's content lives, for the review queue.
+
+        In a favorites/review view the on-screen database is in-memory, so the
+        locator comes from the puzzle's source ref instead."""
+        if self.favorites_view:
+            source = self._current_favorite_source()
+            return (source.database_id, source.database_path) if source is not None else ("", "")
+        if self.database is not None and self.database_path is not None:
+            return self.database.database_id, str(self.database_path)
+        return ("", "")
 
     def _visit_duration_ms(self) -> int | None:
         if self._solve_clock_start is None:
@@ -1012,35 +1034,42 @@ class MainWindow:
     def toggle_current_favorite(self) -> None:
         if self.session is None:
             return
-        if self.favorites_view:
+        if self.favorites_view and not self.review_view:
             self._remove_current_favorite_source()
             return
-        if self.database is None or self.database_path is None:
+        if self.review_view:
+            source = self._current_favorite_source()
+            if source is None:
+                self._status_var.set("Favorite source unavailable.")
+                return
+            database_id, database_path = source.database_id, source.database_path
+        elif self.database is not None and self.database_path is not None:
+            database_id, database_path = self.database.database_id, str(self.database_path)
+        else:
             self._status_var.set("Open the source deck to change favorites.")
             return
         puzzle_id = self.session.puzzle.puzzle_id
-        database_id = self.database.database_id
         if self.user_store.is_favorite(puzzle_id, database_id):
             self.user_store.remove_favorite(puzzle_id, database_id)
-            self._update_favorite_button()
             self._status_var.set("Removed from favorites.")
         else:
-            self.user_store.add_favorite(puzzle_id, database_id, str(self.database_path))
-            self._update_favorite_button()
+            self.user_store.add_favorite(puzzle_id, database_id, database_path)
             self._status_var.set("Added to favorites.")
+        self._update_favorite_button()
 
     def _update_favorite_button(self) -> None:
-        favorited = (
-            self.session is not None
-            and self.database is not None
-            and (
-                self._current_favorite_source() is not None
-                if self.favorites_view
-                else self.user_store.is_favorite(self.session.puzzle.puzzle_id, self.database.database_id)
-            )
-        )
-        icon = "favorite_on.png" if favorited else "favorite_off.png"
+        icon = "favorite_on.png" if self._current_puzzle_favorited() else "favorite_off.png"
         self._layout.set_toolbar_button_icon(self._layout.favorite_button, icon, "Favorite")
+
+    def _current_puzzle_favorited(self) -> bool:
+        if self.session is None or self.database is None:
+            return False
+        if self.review_view:
+            source = self._current_favorite_source()
+            return source is not None and self.user_store.is_favorite(source.puzzle_id, source.database_id)
+        if self.favorites_view:
+            return self._current_favorite_source() is not None
+        return self.user_store.is_favorite(self.session.puzzle.puzzle_id, self.database.database_id)
 
     def _current_favorite_source(self) -> FavoriteRef | None:
         if not self.favorites_view or self.current_index < 0 or self.current_index >= len(self.favorite_sources):
@@ -1069,6 +1098,9 @@ class MainWindow:
 
     def view_all_favorites(self) -> None:
         self._database.view_favorites(scope="all")
+
+    def review_mistakes(self) -> None:
+        self._database.review_mistakes()
 
     def export_favorites_this_deck(self) -> None:
         self._database.export_favorites(scope="deck")

@@ -6,14 +6,6 @@ import chess
 
 
 @dataclass(frozen=True, slots=True)
-class BoardRegion:
-    x: float
-    y: float
-    width: float
-    height: float
-
-
-@dataclass(frozen=True, slots=True)
 class BoardGeometry:
     canvas_width: int
     canvas_height: int
@@ -66,10 +58,6 @@ class BoardGeometry:
         x, y = self.square_top_left(square, flipped)
         half = self.square_size / 2
         return x + half, y + half
-
-    def square_region(self, square: int, flipped: bool) -> BoardRegion:
-        x, y = self.square_top_left(square, flipped)
-        return BoardRegion(x=x, y=y, width=self.square_size, height=self.square_size)
 
     def square_pixel_region(self, square: int, flipped: bool) -> tuple[int, int, int, int]:
         """Integer ``(x1, y1, x2, y2)`` for a square, snapped to whole pixels.

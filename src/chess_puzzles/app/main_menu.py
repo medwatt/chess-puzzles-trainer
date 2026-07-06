@@ -68,6 +68,8 @@ class MainMenuBuilder:
         favorites_menu.add_command(label="View favorites (this deck)", command=window.view_favorites_this_deck)
         favorites_menu.add_command(label="View all favorites", command=window.view_all_favorites)
         favorites_menu.add_separator()
+        favorites_menu.add_command(label="Review mistakes", command=window.review_mistakes)
+        favorites_menu.add_separator()
         favorites_menu.add_command(label="Export favorites (this deck)...", command=window.export_favorites_this_deck)
         favorites_menu.add_command(label="Export all favorites...", command=window.export_all_favorites)
         menu_bar.add_cascade(label="Favorites", menu=favorites_menu)

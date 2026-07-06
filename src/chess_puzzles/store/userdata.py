@@ -6,7 +6,7 @@ from pathlib import Path
 
 from chess_puzzles.platform.paths import user_data_dir
 from chess_puzzles.store.clock import now_iso
-from chess_puzzles.store.sql import USER_SCHEMA_SQL, VISION_SCHEMA_SQL
+from chess_puzzles.store.sql import ATTEMPT_LOCATOR_SQL, USER_SCHEMA_SQL, VISION_SCHEMA_SQL
 
 # Migration N (index N) upgrades the database from user_version N to N+1. A fresh
 # file is at version 0, so migration 0 creates the current schema. To change the
@@ -14,6 +14,7 @@ from chess_puzzles.store.sql import USER_SCHEMA_SQL, VISION_SCHEMA_SQL
 _USER_MIGRATIONS: tuple[str, ...] = (
     USER_SCHEMA_SQL,
     VISION_SCHEMA_SQL,
+    ATTEMPT_LOCATOR_SQL,
 )
 
 
@@ -35,6 +36,10 @@ class Attempt:
     aids: int
     grade: str
     duration_ms: int | None = None
+    # Where the puzzle's content lives, so the review queue can serve it without
+    # the deck being open. '' on attempts that predate the locator migration.
+    database_id: str = ""
+    database_path: str = ""
 
 
 @dataclass(frozen=True, slots=True)
@@ -86,9 +91,10 @@ class UserStore:
     def record_attempt(self, a: Attempt) -> None:
         with self._conn:
             self._conn.execute(
-                "INSERT INTO attempt (puzzle_id, at, outcome, mistakes, aids, duration_ms, grade)"
-                " VALUES (?, ?, ?, ?, ?, ?, ?)",
-                (a.puzzle_id, a.at, a.outcome, a.mistakes, a.aids, a.duration_ms, a.grade),
+                "INSERT INTO attempt"
+                " (puzzle_id, at, outcome, mistakes, aids, duration_ms, grade, database_id, database_path)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (a.puzzle_id, a.at, a.outcome, a.mistakes, a.aids, a.duration_ms, a.grade, a.database_id, a.database_path),
             )
 
     def record_vision_attempt(self, a: VisionAttempt) -> None:

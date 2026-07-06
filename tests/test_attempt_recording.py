@@ -33,6 +33,9 @@ def test_assisted_user_move_then_leave_records_gave_up(tmp_path: Path) -> None:
     window._visit_recorded = False
     window._solve_clock_start = None
     window.user_store = user_store
+    window.favorites_view = False
+    window.database = None
+    window.database_path = None
     window._stats_anchor = "2026-01-01T00:00:00Z"
     window._show_session_stats_var = SimpleNamespace(get=lambda: True)
     window._session_stats_vars = {key: _Var() for key in ("Attempted", "Solved", "Total", "Average")}
