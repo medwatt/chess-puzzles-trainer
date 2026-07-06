@@ -1,4 +1,4 @@
-"""Drill 5 -- king zone: click every attacked square next to a king."""
+"""Drill -- king zone: click every attacked square next to a king."""
 
 from __future__ import annotations
 

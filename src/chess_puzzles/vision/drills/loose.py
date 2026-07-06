@@ -1,4 +1,4 @@
-"""Drill 2 -- loose pieces: pieces with as many attackers as defenders.
+"""Drill -- loose pieces: pieces with as many attackers as defenders.
 
 A loose piece has equal attackers and defenders -- not winnable yet, but one
 removed defender or one new attacker away from hanging. Counting includes
@@ -15,19 +15,7 @@ import chess
 
 from chess_puzzles.vision import analysis
 from chess_puzzles.vision.analysis import ColorScope
-from chess_puzzles.vision.drill import DrillKind, DrillOption, Question
-
-_SCOPE_CHOICES = (
-    ("Both", ColorScope.BOTH),
-    ("Side to move", ColorScope.SIDE_TO_MOVE),
-    ("Opponent", ColorScope.OPPONENT),
-)
-# Share of trials that should be "nothing loose" positions, so the user is
-# trained to confidently reject a calm board rather than always finding a target.
-_NEGATIVE_CHOICES = (
-    ("Off", 0.0),
-    ("Sometimes", 0.25),
-)
+from chess_puzzles.vision.drill import NEGATIVE_CHOICES, SCOPE_CHOICES, DrillKind, DrillOption, Question
 
 
 @dataclass(frozen=True, slots=True)
@@ -36,10 +24,10 @@ class LooseDrill:
     name: ClassVar[str] = "Loose pieces"
     kind: ClassVar[DrillKind] = DrillKind.MULTI_CLICK
     OPTIONS: ClassVar[tuple[DrillOption, ...]] = (
-        DrillOption("scope", "Pieces", _SCOPE_CHOICES),
+        DrillOption("scope", "Pieces", SCOPE_CHOICES),
         DrillOption("include_pawns", "Include pawns"),
         DrillOption("contested_only", "Contested only"),
-        DrillOption("negative_rate", "Negatives", _NEGATIVE_CHOICES),
+        DrillOption("negative_rate", "Negatives", NEGATIVE_CHOICES),
     )
 
     scope: ColorScope = ColorScope.OPPONENT

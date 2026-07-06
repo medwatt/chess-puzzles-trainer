@@ -1,4 +1,4 @@
-"""Drill 4 -- piece reach: click every square a highlighted piece attacks.
+"""Drill -- piece reach: click every square a highlighted piece attacks.
 
 One parameterized drill, registered once per piece type, so the knight / bishop
 / rook / queen variants are data, not four classes.

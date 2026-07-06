@@ -190,3 +190,15 @@ def test_every_registered_drill_makes_a_question() -> None:
         assert isinstance(question, Question)
         assert question.prompt
         assert drill.kind in (DrillKind.SINGLE_CLICK, DrillKind.MULTI_CLICK)
+
+
+def test_long_range_question_carries_feedback_arrows() -> None:
+    # White rook d1 attacks the distant knight d5; the arrow explains the answer.
+    board = chess.Board("4k3/8/8/3n4/8/8/8/3RK3 w - - 0 1")
+    drill = registry.get("long-range")
+    assert drill is not None and drill.accepts(board)
+    question = drill.make_question(board, random.Random(0))
+    assert question.answer == frozenset({chess.D1})
+    assert question.feedback_arrows == frozenset({(chess.D1, chess.D5)})
+    # Every arrow starts on an answer square, so the window can render blindly.
+    assert {origin for origin, _ in question.feedback_arrows} <= question.answer

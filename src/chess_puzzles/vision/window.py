@@ -28,8 +28,6 @@ from chess_puzzles.constants import VISION_WINDOW_GEOMETRY, VISION_WINDOW_MINSIZ
 from chess_puzzles.platform.audio import AudioPlayer
 from chess_puzzles.store import UserStore, VisionAttempt, now_iso
 from chess_puzzles.vision.drill import TrialResult, shows_coordinates
-from chess_puzzles.vision import analysis
-from chess_puzzles.vision.analysis import ColorScope
 from chess_puzzles.vision.options_panel import OptionsPanel
 from chess_puzzles.vision.registry import registry
 from chess_puzzles.vision.session import VisionSession
@@ -359,24 +357,11 @@ class BoardVisionWindow(tk.Toplevel):
         squares = [SquareAnnotation(sq, AnnotationColor.BLUE) for sq in question.highlight]
         squares += [SquareAnnotation(sq, AnnotationColor.GREEN) for sq in question.answer]
         squares += [SquareAnnotation(sq, AnnotationColor.RED) for sq in result.wrong]
-        arrows = self._feedback_arrows()
-        self.board.set_annotations(BoardAnnotations(squares=tuple(squares), arrows=tuple(arrows)))
-
-    def _feedback_arrows(self) -> list[ArrowAnnotation]:
-        if self.session is None or self.session.question is None:
-            return []
-        drill = self.session.drill
-        if drill.id != "long-range":
-            return []
-        board = chess.Board(self.session.question.fen)
-        scope = getattr(drill, "scope", ColorScope.SIDE_TO_MOVE)
-        include_pawns = getattr(drill, "include_pawns", False)
-        targets = analysis.long_range_attack_targets(board, scope=scope, include_pawns=include_pawns)
-        arrows: list[ArrowAnnotation] = []
-        for origin, target_squares in targets.items():
-            for target in target_squares:
-                arrows.append(ArrowAnnotation(origin, target, AnnotationColor.YELLOW))
-        return arrows
+        arrows = tuple(
+            ArrowAnnotation(origin, target, AnnotationColor.YELLOW)
+            for origin, target in sorted(question.feedback_arrows)
+        )
+        self.board.set_annotations(BoardAnnotations(squares=tuple(squares), arrows=arrows))
 
     def _record(self, result: TrialResult) -> None:
         question = self.session.question if self.session is not None else None

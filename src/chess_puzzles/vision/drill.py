@@ -17,6 +17,8 @@ from typing import Protocol
 
 import chess
 
+from chess_puzzles.vision.analysis import ColorScope
+
 
 class DrillKind(Enum):
     """How the user submits an answer."""
@@ -35,6 +37,9 @@ class Question:
     answer: frozenset[int]
     highlight: frozenset[int] = field(default_factory=frozenset)
     label: str | None = None
+    # (origin, target) arrows drawn alongside the solution, so a drill can show
+    # *why* an answer square is right. The window renders these generically.
+    feedback_arrows: frozenset[tuple[int, int]] = field(default_factory=frozenset)
 
 
 @dataclass(frozen=True, slots=True)
@@ -71,6 +76,21 @@ class DrillOption:
     key: str
     label: str
     choices: tuple[tuple[str, object], ...] | None = None
+
+
+# Choice lists shared by the drills that expose these knobs, so the labels stay
+# consistent across the drop-downs.
+SCOPE_CHOICES: tuple[tuple[str, object], ...] = (
+    ("Both", ColorScope.BOTH),
+    ("Side to move", ColorScope.SIDE_TO_MOVE),
+    ("Opponent", ColorScope.OPPONENT),
+)
+# Share of trials that should pose an empty-answer position, so the user is
+# trained to confidently reject a clean board rather than always hunting.
+NEGATIVE_CHOICES: tuple[tuple[str, object], ...] = (
+    ("Off", 0.0),
+    ("Sometimes", 0.25),
+)
 
 
 class Drill(Protocol):

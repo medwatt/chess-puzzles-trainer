@@ -1,4 +1,4 @@
-"""Drill 1 -- square localization: a coordinate is named, click the square."""
+"""Drill -- square localization: a coordinate is named, click the square."""
 
 from __future__ import annotations
 
