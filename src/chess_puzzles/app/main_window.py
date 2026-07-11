@@ -14,6 +14,7 @@ from chess_puzzles.app.main_database_actions import MainDatabaseActions
 from chess_puzzles.app.main_layout import MainLayoutBuilder
 from chess_puzzles.app.main_menu import MainMenuBuilder
 from chess_puzzles.app.main_user_notes import MainUserNotes
+from chess_puzzles.app.refutation_playback import RefutationPlayback
 from chess_puzzles.board import BoardPresentation, BoardPresenter, snapshot_to_svg
 from chess_puzzles.board.board_state import BoardSnapshot
 from chess_puzzles.board.board_theme import PieceTheme, default_annotation_theme
@@ -130,6 +131,7 @@ class MainWindow:
         # Computer-reply scheduling (within the current session)
         self._computer_reply_after_id: str | None = None
         self.waiting_for_continue = False
+        self._refutation_playback = RefutationPlayback(self)
 
         # Engine result polling runs only while analysis is active.
         # Continuous evaluation only happens when the user asked for it;
@@ -215,6 +217,7 @@ class MainWindow:
             self._status_var.set("Position reset")
             return
         self.cancel_computer_reply()
+        self._refutation_playback.cancel()
         self.session.reset()
         self._refresh_from_session("Puzzle reset.")
         self._schedule_computer_reply()
@@ -623,6 +626,7 @@ class MainWindow:
         puzzle = self.database.puzzle_at(self.current_index)
         player_color = self._player_color_for_puzzle(puzzle)
         self.session = PuzzleSession(puzzle, player_color)
+        self._refutation_playback.cancel()
         self.waiting_for_continue = False
         self._engaged = False
         self._visit_recorded = False
@@ -681,6 +685,9 @@ class MainWindow:
         self.load_current_puzzle()
 
     def on_move_requested(self, move: chess.Move, *, animate: bool = True) -> None:
+        if self._refutation_playback.active:
+            self._status_var.set("Watching the refutation - press m to continue.")
+            return
         if self.session is None:
             board = self._layout.board.state.board.copy(stack=False)
             if move in board.legal_moves:
@@ -705,9 +712,17 @@ class MainWindow:
             self._status_var.set(f"Also playable - but this puzzle trains {self._expected_san()}.")
             return
         if result == MoveResult.BLUNDER:
-            self.audio.play_error()
-            self._layout.board.flash_move(move)
-            self._show_refutation()
+            refutation = self.session.last_refutation
+            if refutation is not None:
+                # The blunder is played onto the board and punished; the
+                # playback rewinds to this position when it finishes. It
+                # supplies the move sound itself -- play_error() here would
+                # double it (both resolve to move.wav).
+                self._refutation_playback.start(refutation, animate_first=animate)
+            else:
+                self.audio.play_error()
+                self._layout.board.flash_move(move)
+                self._status_var.set("Incorrect move.")
             return
         messages = {
             MoveResult.ILLEGAL: "Illegal move.",
@@ -782,6 +797,10 @@ class MainWindow:
         self._status_var.set(on_message if new_mode is mode else "Insight overlay hidden.")
 
     def show_hint(self) -> None:
+        # During refutation playback the board is not at the session position,
+        # so a hint would point at a piece that may not even be there.
+        if self._refutation_playback.active:
+            return
         if self.session is None or self.session.expected_move is None:
             return
         self.session.record_aid_used()
@@ -792,6 +811,8 @@ class MainWindow:
         self._status_var.set(f"Hint: move the {label} on {chess.square_name(move.from_square)}.")
 
     def play_next_move_for_user(self) -> None:
+        if self._refutation_playback.advance():
+            return
         if self.session is None or self.session.expected_move is None:
             return
         if self.waiting_for_continue:
@@ -844,27 +865,6 @@ class MainWindow:
             return self.session.board.san(move)
         except ValueError:
             return move.uci()
-
-    def _show_refutation(self) -> None:
-        """Show why a NAG-marked mistake fails: the punishing line in the
-        status bar, the author's explanation in the comment panel."""
-        assert self.session is not None
-        refutation = self.session.last_refutation
-        if refutation is None:
-            self._status_var.set("Incorrect move.")
-            return
-        board = self.session.board.copy(stack=False)
-        sans = [board.san_and_push(refutation.move)]
-        for reply in refutation.line:
-            sans.append(board.san_and_push(reply))
-        if len(sans) > 1:
-            self._status_var.set(f"Blunder: {sans[0]} loses to {' '.join(sans[1:])}.")
-        else:
-            self._status_var.set(f"Blunder: {sans[0]} is a marked mistake.")
-        explanation = "\n\n".join(comment for comment in refutation.comments if comment.strip())
-        if explanation and hasattr(self._layout, "comment_view"):
-            text = f"{' '.join(sans)}\n\n{explanation}"
-            self._replace_text(self._layout.comment_view, self._display_comment(text))
 
     def _schedule_computer_reply(self) -> None:
         self.cancel_computer_reply()
