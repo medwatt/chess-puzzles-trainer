@@ -12,6 +12,12 @@ class MoveResult(Enum):
     INCORRECT = "incorrect"
     COMPLETE = "complete"
     WAITING = "waiting"
+    # A legal deviation that exists in the puzzle's variation tree: an
+    # unmarked sibling line (acceptable, but not the drilled line) ...
+    ALTERNATIVE = "alternative"
+    # ... or a variation whose first move is NAG-marked ?/??/?! -- a known
+    # mistake with a recorded refutation (see puzzle.tree).
+    BLUNDER = "blunder"
 
 
 @dataclass(frozen=True, slots=True)

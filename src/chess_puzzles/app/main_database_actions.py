@@ -9,7 +9,10 @@ from tkinter import filedialog, messagebox
 import chess
 
 from chess_puzzles.database.manager import DatabaseManagerDialog
+from chess_puzzles.dialogs.choice import ChoiceDialog
 from chess_puzzles.pgn.exporter import export_puzzles_to_pgn
+from chess_puzzles.puzzle import Puzzle
+from chess_puzzles.puzzle.tree import MoveTree
 from chess_puzzles.lichess import (
     DEFAULT_LICHESS_DATABASE_FILENAME,
     DEFAULT_LICHESS_DATABASE_NAME,
@@ -36,6 +39,11 @@ class MainDatabaseActions:
 
     def _database_initialdir(self) -> str:
         return self.window.state.settings.default_database_directory or str(Path.home())
+
+    @staticmethod
+    def _puzzle_has_branches(puzzle: Puzzle) -> bool:
+        tree = MoveTree.from_pgn_text(puzzle.pgn_text, puzzle.initial_fen)
+        return tree is not None and tree.has_branches
 
     def edit_current_database(self) -> None:
         window = self.window
@@ -86,6 +94,27 @@ class MainDatabaseActions:
         if not puzzles:
             messagebox.showinfo("No puzzles found", "The selected PGN did not contain any games.", parent=window.root)
             return
+        # Variation-rich files (repertoires, annotated courses) can be split
+        # so every line becomes its own drillable puzzle. Files without
+        # variations import exactly as before, no question asked.
+        if any(self._puzzle_has_branches(puzzle) for puzzle in puzzles):
+            per_game = "One puzzle per game (variations shown after solving)"
+            per_line = "One puzzle per line (drill each variation separately)"
+            choice = ChoiceDialog(
+                window.root,
+                "PGN contains variations",
+                "This file has variations. How should it be imported?",
+                [per_game, per_line],
+                default=per_game,
+            ).show_modal()
+            if choice is None:
+                return
+            if choice == per_line:
+                try:
+                    puzzles = window.loader.load_file(path, split_lines=True)
+                except Exception as exc:
+                    messagebox.showerror("Could not load PGN", str(exc), parent=window.root)
+                    return
         pgn_path = Path(path)
         save_path = self._ask_save_path(f"{pgn_path.stem}.cpdb")
         if not save_path:

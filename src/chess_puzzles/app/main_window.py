@@ -694,22 +694,30 @@ class MainWindow:
 
         board_before = self.session.board.copy(stack=False)
         result = self.session.play_user_move(move)
-        if result in (MoveResult.CORRECT, MoveResult.COMPLETE, MoveResult.INCORRECT):
+        if result not in (MoveResult.ILLEGAL, MoveResult.WAITING):
             self._engaged = True
+        if result in (MoveResult.CORRECT, MoveResult.COMPLETE):
+            message = "Puzzle complete." if result == MoveResult.COMPLETE else "Correct."
+            self._apply_correct_move(result, move, board_before, message, animate=animate)
+            return
+        if result == MoveResult.ALTERNATIVE:
+            self._layout.board.flash_move(move)
+            self._status_var.set(f"Also playable - but this puzzle trains {self._expected_san()}.")
+            return
+        if result == MoveResult.BLUNDER:
+            self.audio.play_error()
+            self._layout.board.flash_move(move)
+            self._show_refutation()
+            return
         messages = {
-            MoveResult.CORRECT: "Correct.",
-            MoveResult.COMPLETE: "Puzzle complete.",
             MoveResult.ILLEGAL: "Illegal move.",
             MoveResult.INCORRECT: "Incorrect move.",
             MoveResult.WAITING: "Waiting for your side to move.",
         }
-        if result in (MoveResult.CORRECT, MoveResult.COMPLETE):
-            self._apply_correct_move(result, move, board_before, messages[result], animate=animate)
-        else:
-            if result in (MoveResult.ILLEGAL, MoveResult.INCORRECT):
-                self.audio.play_error()
-            self._layout.board.flash_move(move)
-            self._status_var.set(messages[result])
+        if result in (MoveResult.ILLEGAL, MoveResult.INCORRECT):
+            self.audio.play_error()
+        self._layout.board.flash_move(move)
+        self._status_var.set(messages.get(result, "Incorrect move."))
 
     def show_threats(self) -> None:
         """Ask the engine what the opponent would play if we passed."""
@@ -826,6 +834,37 @@ class MainWindow:
             self._record_solve()
             self._maybe_show_pgn_after_solve()
             self._maybe_auto_next()
+
+    def _expected_san(self) -> str:
+        assert self.session is not None
+        move = self.session.expected_move
+        if move is None:
+            return ""
+        try:
+            return self.session.board.san(move)
+        except ValueError:
+            return move.uci()
+
+    def _show_refutation(self) -> None:
+        """Show why a NAG-marked mistake fails: the punishing line in the
+        status bar, the author's explanation in the comment panel."""
+        assert self.session is not None
+        refutation = self.session.last_refutation
+        if refutation is None:
+            self._status_var.set("Incorrect move.")
+            return
+        board = self.session.board.copy(stack=False)
+        sans = [board.san_and_push(refutation.move)]
+        for reply in refutation.line:
+            sans.append(board.san_and_push(reply))
+        if len(sans) > 1:
+            self._status_var.set(f"Blunder: {sans[0]} loses to {' '.join(sans[1:])}.")
+        else:
+            self._status_var.set(f"Blunder: {sans[0]} is a marked mistake.")
+        explanation = "\n\n".join(comment for comment in refutation.comments if comment.strip())
+        if explanation and hasattr(self._layout, "comment_view"):
+            text = f"{' '.join(sans)}\n\n{explanation}"
+            self._replace_text(self._layout.comment_view, self._display_comment(text))
 
     def _schedule_computer_reply(self) -> None:
         self.cancel_computer_reply()

@@ -6,6 +6,7 @@ import chess
 
 from chess_puzzles.move_utils import normalize_promotion
 from chess_puzzles.puzzle.model import MoveResult, Puzzle
+from chess_puzzles.puzzle.tree import MoveTree, Refutation, TreeNode
 
 
 @dataclass(slots=True)
@@ -14,6 +15,12 @@ class PuzzleSession:
 
     Owns the board position and move index. Does not touch the UI,
     sounds, or persistence.
+
+    Deviations from the drilled line are classified against the puzzle's
+    variation tree (rebuilt from ``pgn_text``): an author-marked mistake is a
+    BLUNDER carrying its refutation, an unmarked sibling line is an
+    ALTERNATIVE, and anything off-tree is INCORRECT as before. A puzzle
+    without variations degenerates to the original expected-move-only check.
     """
 
     puzzle: Puzzle
@@ -23,9 +30,14 @@ class PuzzleSession:
     last_result: MoveResult | None = None
     mistakes: int = 0
     aids_used: int = 0
+    last_refutation: Refutation | None = field(init=False, default=None)
+    _tree: MoveTree | None = field(init=False, default=None)
+    _tree_node: TreeNode | None = field(init=False, default=None)
 
     def __post_init__(self) -> None:
         self.board = chess.Board(self.puzzle.initial_fen)
+        self._tree = MoveTree.from_pgn_text(self.puzzle.pgn_text, self.puzzle.initial_fen)
+        self._tree_node = self._tree.root if self._tree is not None else None
 
     @property
     def is_complete(self) -> bool:
@@ -50,6 +62,8 @@ class PuzzleSession:
         self.last_result = None
         self.mistakes = 0
         self.aids_used = 0
+        self.last_refutation = None
+        self._tree_node = self._tree.root if self._tree is not None else None
 
     def record_aid_used(self) -> None:
         """Count a hint, threat, or overlay reveal against this run.
@@ -60,6 +74,7 @@ class PuzzleSession:
         self.aids_used += 1
 
     def play_user_move(self, move: chess.Move) -> MoveResult:
+        self.last_refutation = None
         if self.is_complete:
             self.last_result = MoveResult.COMPLETE
             return self.last_result
@@ -74,12 +89,10 @@ class PuzzleSession:
             return self.last_result
 
         if legal_move != self.expected_move:
-            self.mistakes += 1
-            self.last_result = MoveResult.INCORRECT
+            self.last_result = self._classify_deviation(legal_move)
             return self.last_result
 
-        self.board.push(legal_move)
-        self.move_index += 1
+        self._push(legal_move)
         self.last_result = MoveResult.COMPLETE if self.is_complete else MoveResult.CORRECT
         return self.last_result
 
@@ -91,7 +104,25 @@ class PuzzleSession:
         if move is None:
             return None
 
-        self.board.push(move)
-        self.move_index += 1
+        self._push(move)
         self.last_result = MoveResult.COMPLETE if self.is_complete else MoveResult.WAITING
         return move
+
+    def _push(self, move: chess.Move) -> None:
+        self.board.push(move)
+        self.move_index += 1
+        # An off-tree move parks the cursor at None and every later lookup
+        # degenerates to INCORRECT; only mainline moves are ever pushed, so
+        # this happens only when pgn_text disagrees with puzzle.moves.
+        self._tree_node = self._tree_node.child(move) if self._tree_node is not None else None
+
+    def _classify_deviation(self, move: chess.Move) -> MoveResult:
+        node = self._tree_node.child(move) if self._tree_node is not None else None
+        if node is None:
+            self.mistakes += 1
+            return MoveResult.INCORRECT
+        if node.is_mistake:
+            self.mistakes += 1
+            self.last_refutation = MoveTree.refutation_of(node)
+            return MoveResult.BLUNDER
+        return MoveResult.ALTERNATIVE

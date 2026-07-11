@@ -213,3 +213,67 @@ def test_pgn_for_puzzle_rebuild_keeps_comments_on_their_moves() -> None:
 
     reparsed = PgnLoader().load(StringIO(rebuilt))[0]
     assert reparsed.comments == puzzle.comments
+
+
+REPERTOIRE_PGN = """
+[Event "Repertoire"]
+[White "Chapter One"]
+
+{intro} 1. e4 {main} ( 1. d4 {queenside} 1... d5 2. c4 {gambit} ) 1... e5
+( 1... c5 $2 {marked bad} 2. Nf3 {punished} ) 2. Nf3 *
+"""
+
+
+def test_split_lines_yields_one_puzzle_per_variation_line() -> None:
+    puzzles = PgnLoader().load(StringIO(REPERTOIRE_PGN), split_lines=True)
+
+    assert len(puzzles) == 2
+    first, second = puzzles
+    assert [m.uci() for m in first.moves] == ["e2e4", "e7e5", "g1f3"]
+    assert [m.uci() for m in second.moves] == ["d2d4", "d7d5", "c2c4"]
+    # Both lines keep the full game PGN so sessions can classify deviations.
+    assert first.pgn_text == second.pgn_text
+    assert "queenside" in first.pgn_text
+
+
+def test_split_lines_prunes_mistake_marked_variations() -> None:
+    puzzles = PgnLoader().load(StringIO(REPERTOIRE_PGN), split_lines=True)
+
+    # 1...c5 is NAG-marked as a mistake: refutation content, not a line.
+    assert all(chess.Move.from_uci("c7c5") not in p.moves for p in puzzles)
+
+
+def test_split_lines_aligns_comments_and_sets_chapter_theme() -> None:
+    puzzles = PgnLoader().load(StringIO(REPERTOIRE_PGN), split_lines=True)
+
+    first, second = puzzles
+    assert first.comments[0] == "intro"
+    assert first.comments[1] == "main"
+    assert second.comments[1] == "queenside"
+    assert second.comments[3] == "gambit"
+    for line_index, puzzle in enumerate(puzzles, start=1):
+        assert puzzle.theme == "Repertoire"
+        assert puzzle.title == f"Repertoire (line {line_index}/2)"
+
+
+def test_split_lines_falls_back_to_game_for_text_only_pages() -> None:
+    pgn = '[Event "Intro"]\n[Result "*"]\n\n{lesson text only} 1. -- {tail} *\n'
+
+    split = PgnLoader().load(StringIO(pgn), split_lines=True)
+    whole = PgnLoader().load(StringIO(pgn))
+
+    assert len(split) == len(whole) == 1
+    assert split[0].moves == ()
+    assert "lesson text only" in split[0].comments[0]
+
+
+def test_split_lines_on_linear_game_matches_regular_load() -> None:
+    pgn = '[Event "Line"]\n[Result "*"]\n\n1. e4 {a} e5 {b} 2. Nf3 *\n'
+
+    split = PgnLoader().load(StringIO(pgn), split_lines=True)
+    whole = PgnLoader().load(StringIO(pgn))
+
+    assert len(split) == len(whole) == 1
+    assert split[0].moves == whole[0].moves
+    assert split[0].comments == whole[0].comments
+    assert split[0].title == whole[0].title
