@@ -46,7 +46,7 @@ from chess_puzzles.pgn.comments import strip_annotation_commands
 from chess_puzzles.pgn.exporter import export_puzzles_to_pgn
 from chess_puzzles.pgn.utils import pgn_for_puzzle
 from chess_puzzles.pgn.viewer import PgnViewer
-from chess_puzzles.puzzle import MoveResult, Puzzle, PuzzleSession
+from chess_puzzles.puzzle import MoveResult, Puzzle, PuzzleSession, Refutation
 from chess_puzzles.puzzle.grade import grade_solve
 from chess_puzzles.reports import AttemptSummary, attempt_summary, format_duration_ms
 from chess_puzzles.settings.repository import SettingsRepository
@@ -91,6 +91,7 @@ class MainWindow:
         self._auto_next_var = tk.BooleanVar(value=state.settings.auto_next_enabled)
         self._clean_comments_var = tk.BooleanVar(value=state.settings.clean_comments)
         self._pause_for_comment_var = tk.BooleanVar(value=state.settings.pause_for_comment)
+        self._pause_playback_var = tk.BooleanVar(value=state.settings.pause_playback_each_move)
 
         # Sidebar/status text bound to labels
         self._status_var = tk.StringVar(value="Ready")
@@ -132,6 +133,12 @@ class MainWindow:
         self._computer_reply_after_id: str | None = None
         self.waiting_for_continue = False
         self._refutation_playback = RefutationPlayback(self)
+        # Post-solve coda: traps the user walked past, offered for review
+        # after completion. _seen_refutations keys (decision FEN, move uci)
+        # the user already experienced this puzzle, so a trap they fell into
+        # is not re-offered as a lesson.
+        self._avoided_traps: list[tuple[str, Refutation]] = []
+        self._seen_refutations: set[tuple[str, str]] = set()
 
         # Engine result polling runs only while analysis is active.
         # Continuous evaluation only happens when the user asked for it;
@@ -218,6 +225,9 @@ class MainWindow:
             return
         self.cancel_computer_reply()
         self._refutation_playback.cancel()
+        # _seen_refutations survives a reset on purpose: a trap already
+        # experienced this visit is not re-offered after re-solving.
+        self._avoided_traps = []
         self.session.reset()
         self._refresh_from_session("Puzzle reset.")
         self._schedule_computer_reply()
@@ -298,6 +308,7 @@ class MainWindow:
             auto_next_enabled=bool(self._auto_next_var.get()),
             clean_comments=bool(self._clean_comments_var.get()),
             pause_for_comment=bool(self._pause_for_comment_var.get()),
+            pause_playback_each_move=bool(self._pause_playback_var.get()),
         )
 
     def on_clean_comments_changed(self) -> None:
@@ -619,6 +630,10 @@ class MainWindow:
         self._user_notes.save_now()
         self._database.import_lichess_csv()
 
+    def generate_blunder_puzzles(self) -> None:
+        self._user_notes.save_now()
+        self._database.generate_blunder_puzzles()
+
     def load_current_puzzle(self) -> None:
         self._finalize_visit()
         if self.database is None or self.current_index < 0 or self.current_index >= self.database.count():
@@ -627,6 +642,8 @@ class MainWindow:
         player_color = self._player_color_for_puzzle(puzzle)
         self.session = PuzzleSession(puzzle, player_color)
         self._refutation_playback.cancel()
+        self._avoided_traps = []
+        self._seen_refutations = set()
         self.waiting_for_continue = False
         self._engaged = False
         self._visit_recorded = False
@@ -718,6 +735,7 @@ class MainWindow:
                 # playback rewinds to this position when it finishes. It
                 # supplies the move sound itself -- play_error() here would
                 # double it (both resolve to move.wav).
+                self._seen_refutations.add((self.session.board.fen(), refutation.move.uci()))
                 self._refutation_playback.start(refutation, animate_first=animate)
             else:
                 self.audio.play_error()
@@ -813,6 +831,11 @@ class MainWindow:
     def play_next_move_for_user(self) -> None:
         if self._refutation_playback.advance():
             return
+        if self._avoided_traps and self.session is not None and self.session.is_complete:
+            fen, refutation = self._avoided_traps.pop(0)
+            self._seen_refutations.add((fen, refutation.move.uci()))
+            self._refutation_playback.start(refutation, origin=chess.Board(fen))
+            return
         if self.session is None or self.session.expected_move is None:
             return
         if self.waiting_for_continue:
@@ -852,9 +875,7 @@ class MainWindow:
         if result == MoveResult.CORRECT:
             self._schedule_computer_reply()
         elif result == MoveResult.COMPLETE:
-            self._record_solve()
-            self._maybe_show_pgn_after_solve()
-            self._maybe_auto_next()
+            self._finish_puzzle()
 
     def _expected_san(self) -> str:
         assert self.session is not None
@@ -865,6 +886,23 @@ class MainWindow:
             return self.session.board.san(move)
         except ValueError:
             return move.uci()
+
+    def _finish_puzzle(self) -> None:
+        """Completion housekeeping, plus the trap coda: if the solved line
+        walked past marked mistakes the user never experienced, offer to
+        replay them instead of auto-advancing."""
+        assert self.session is not None
+        self._record_solve()
+        self._avoided_traps = [
+            (fen, refutation)
+            for fen, refutation in self.session.avoided_refutations()
+            if (fen, refutation.move.uci()) not in self._seen_refutations
+        ]
+        self._maybe_show_pgn_after_solve()
+        if self._avoided_traps:
+            self._status_var.set("Puzzle complete - press m to review the trap you avoided.")
+            return
+        self._maybe_auto_next()
 
     def _schedule_computer_reply(self) -> None:
         self.cancel_computer_reply()
@@ -894,9 +932,7 @@ class MainWindow:
         status = "Puzzle complete." if self.session.is_complete else "Your move."
         self._refresh_from_session(status, move)
         if self.session.is_complete:
-            self._record_solve()
-            self._maybe_show_pgn_after_solve()
-            self._maybe_auto_next()
+            self._finish_puzzle()
         else:
             self._maybe_start_solve_clock()
 

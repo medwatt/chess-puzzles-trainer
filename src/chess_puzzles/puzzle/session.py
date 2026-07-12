@@ -18,9 +18,11 @@ class PuzzleSession:
 
     Deviations from the drilled line are classified against the puzzle's
     variation tree (rebuilt from ``pgn_text``): an author-marked mistake is a
-    BLUNDER carrying its refutation, an unmarked sibling line is an
-    ALTERNATIVE, and anything off-tree is INCORRECT as before. A puzzle
-    without variations degenerates to the original expected-move-only check.
+    BLUNDER carrying its refutation; an unmarked sibling with a continuation
+    is an ALTERNATIVE; an unmarked sibling that ends immediately is an
+    accepted final answer (COMPLETE); anything off-tree is INCORRECT as
+    before. A puzzle without variations degenerates to the original
+    expected-move-only check.
     """
 
     puzzle: Puzzle
@@ -116,6 +118,29 @@ class PuzzleSession:
         # this happens only when pgn_text disagrees with puzzle.moves.
         self._tree_node = self._tree_node.child(move) if self._tree_node is not None else None
 
+    def avoided_refutations(self) -> list[tuple[str, Refutation]]:
+        """Traps the user walked past: mistake-marked siblings at each of the
+        user's decision points along the line played so far, as (FEN of the
+        decision point, refutation) pairs. Used after solving to offer the
+        lesson the user never triggered."""
+        if self._tree is None:
+            return []
+        avoided: list[tuple[str, Refutation]] = []
+        board = chess.Board(self.puzzle.initial_fen)
+        node: TreeNode | None = self._tree.root
+        # Walk the moves actually played (a leaf alternative may have ended
+        # the puzzle off the mainline), not the mainline prescription.
+        for move in list(self.board.move_stack):
+            if node is None:
+                break
+            if board.turn == self.player_color:
+                for child in node.children:
+                    if child.is_mistake and child.move != move:
+                        avoided.append((board.fen(), MoveTree.refutation_of(child)))
+            node = node.child(move)
+            board.push(move)
+        return avoided
+
     def _classify_deviation(self, move: chess.Move) -> MoveResult:
         node = self._tree_node.child(move) if self._tree_node is not None else None
         if node is None:
@@ -125,4 +150,15 @@ class PuzzleSession:
             self.mistakes += 1
             self.last_refutation = MoveTree.refutation_of(node)
             return MoveResult.BLUNDER
+        if not node.children:
+            # The chosen variation is approved (not mistake-marked) and has
+            # nothing further to train, so it is an accepted final answer:
+            # the drill follows the branch the user picked and that branch
+            # ends here. Generated decks encode extra safe moves as exactly
+            # such leaves; branchy content (repertoire lines) still gets
+            # ALTERNATIVE because those siblings have continuations.
+            self.board.push(move)
+            self._tree_node = node
+            self.move_index = len(self.puzzle.moves)
+            return MoveResult.COMPLETE
         return MoveResult.ALTERNATIVE

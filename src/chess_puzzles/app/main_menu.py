@@ -45,6 +45,10 @@ class MainMenuBuilder:
             command=window.import_lichess_csv,
         )
         database_menu.add_command(
+            label="Generate blunder puzzles...",
+            command=window.generate_blunder_puzzles,
+        )
+        database_menu.add_command(
             label="Edit current...",
             accelerator=MENU_ACCELERATORS[MainShortcuts.EDIT_DATABASE],
             command=window.edit_current_database,
@@ -193,6 +197,11 @@ class MainMenuBuilder:
             label="Show PGN after solving",
             variable=window._show_pgn_after_solve_var,
             command=window.on_show_pgn_after_solve_changed,
+        )
+        settings_menu.add_checkbutton(
+            label="Pause playback on every move",
+            variable=window._pause_playback_var,
+            command=window.save_training_preferences,
         )
         settings_menu.add_checkbutton(
             label="Show evaluation bar",

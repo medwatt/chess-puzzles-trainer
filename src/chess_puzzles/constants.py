@@ -18,6 +18,9 @@ FLASH_CORRECT_COLOR: str = "#2f8f46"
 
 # Engine timing
 COMPUTER_REPLY_DELAY_MS: int = 350
+# Refutation playback is a lesson, not a reply: each move needs to register
+# before the next lands, so it paces slower than ordinary computer replies.
+REFUTATION_STEP_DELAY_MS: int = 900
 ENGINE_POLL_INTERVAL_MS: int = 150
 # Pause after solving so the result has time to register.
 AUTO_NEXT_DELAY_MS: int = 1200

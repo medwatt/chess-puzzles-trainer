@@ -44,6 +44,8 @@ def test_assisted_user_move_then_leave_records_gave_up(tmp_path: Path) -> None:
     window._status_var = SimpleNamespace(set=lambda _value: None)
     window._apply_correct_move = lambda result, move, board_before, status: None
     window._refutation_playback = RefutationPlayback(window)
+    window._avoided_traps = []
+    window._seen_refutations = set()
 
     window.play_next_move_for_user()
     window._finalize_visit()

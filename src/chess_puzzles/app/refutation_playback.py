@@ -3,9 +3,9 @@
 When the session classifies a move as a BLUNDER, the punishment should be
 experienced, not just read: the blunder lands on the board, the refutation
 plays out move by move, and the board rewinds to the decision point for a
-retry. Pacing follows the same contract as computer replies everywhere else
-in the app: silent moves auto-play on the standard reply delay, moves whose
-comment has prose wait for the continue key while pause-for-comment is on,
+retry. Pacing: silent moves auto-play on a lesson-speed delay, moves whose
+comment has prose wait for the continue key while pause-for-comment is on
+(the pause-playback-on-every-move setting extends that wait to all moves),
 and the final position always waits so the conclusion can be read. Comment
 markup (%cal/%csl) is rendered as board arrows and circles at each step.
 
@@ -20,7 +20,7 @@ from typing import TYPE_CHECKING
 
 import chess
 
-from chess_puzzles.constants import COMPUTER_REPLY_DELAY_MS
+from chess_puzzles.constants import REFUTATION_STEP_DELAY_MS
 from chess_puzzles.pgn.comments import annotations_from_comment, strip_annotation_commands
 from chess_puzzles.puzzle.tree import Refutation
 
@@ -42,15 +42,29 @@ class RefutationPlayback:
     def active(self) -> bool:
         return self._board is not None
 
-    def start(self, refutation: Refutation, *, animate_first: bool = True) -> None:
+    def start(
+        self,
+        refutation: Refutation,
+        *,
+        origin: chess.Board | None = None,
+        animate_first: bool = True,
+    ) -> None:
         """``animate_first`` carries the input's animate flag: a dragged
         blunder already sits on its target square, exactly like a dragged
         correct move. Refutation replies always animate (they are computer
-        moves)."""
+        moves).
+
+        ``origin`` is the trap's decision point when it differs from the
+        session position -- the post-solve coda replays traps the user walked
+        past earlier in the line. The board rewinds there before the trap
+        plays, and returns to the session position when playback ends."""
         window = self._window
         assert window.session is not None
         self.cancel()
-        self._board = window.session.board.copy(stack=False)
+        source = origin if origin is not None else window.session.board
+        self._board = source.copy(stack=False)
+        if origin is not None:
+            window._layout.board.advance_position(self._board, None, animate=False)
         self._steps = [(refutation.move, refutation.comments[0])]
         self._steps.extend(zip(refutation.line, refutation.comments[1:]))
         self._finished = False
@@ -105,11 +119,11 @@ class RefutationPlayback:
             self._finished = True
             window._status_var.set("Refutation shown - press m to try again.")
             return
-        if prose and window._pause_for_comment_var.get():
-            window._status_var.set("Blunder: press m to continue.")
+        if window._pause_playback_var.get() or (prose and window._pause_for_comment_var.get()):
+            window._status_var.set("Press m to continue.")
             return
-        window._status_var.set("Blunder - watch the refutation.")
-        self._after_id = window.root.after(COMPUTER_REPLY_DELAY_MS, self._on_timer)
+        window._status_var.set("Watch the refutation.")
+        self._after_id = window.root.after(REFUTATION_STEP_DELAY_MS, self._on_timer)
 
     def _on_timer(self) -> None:
         self._after_id = None
@@ -124,7 +138,10 @@ class RefutationPlayback:
         window._layout.board.advance_position(session.board, None)
         if hasattr(window._layout, "comment_view"):
             window._replace_text(window._layout.comment_view, window._display_comment(session.current_comment))
-        window._status_var.set("Back at the position - find the best move.")
+        if session.is_complete:
+            window._status_var.set("Puzzle complete.")
+        else:
+            window._status_var.set("Back at the position - find the best move.")
 
     def _cancel_timer(self) -> None:
         if self._after_id is not None:

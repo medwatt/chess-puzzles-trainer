@@ -77,13 +77,14 @@ class FakeLayout:
 
 
 class FakeWindow:
-    def __init__(self, session: PuzzleSession, pause_for_comment: bool) -> None:
+    def __init__(self, session: PuzzleSession, pause_for_comment: bool, pause_playback: bool = False) -> None:
         self.session = session
         self.root = FakeRoot()
         self.audio = FakeAudio()
         self._layout = FakeLayout()
         self._status_var = FakeVar("")
         self._pause_for_comment_var = FakeVar(pause_for_comment)
+        self._pause_playback_var = FakeVar(pause_playback)
         self.comment_text = ""
 
     def _display_comment(self, comment: str) -> str:
@@ -164,6 +165,51 @@ def test_playback_autoplays_when_pause_for_comment_is_off() -> None:
     window.root.fire()
     assert len(window._layout.board.moves) == 4
     assert window.root.pending == {}  # final position still waits for the key
+
+
+def test_coda_playback_rewinds_to_origin_then_returns_to_session_board() -> None:
+    # Solve the puzzle first: the trap at the root was walked past.
+    puzzle_session = _blundered_session()
+    puzzle_session.reset()
+    puzzle_session.play_user_move(chess.Move.from_uci("e2e4"))
+    puzzle_session.play_computer_move()
+    assert puzzle_session.is_complete
+
+    window = FakeWindow(puzzle_session, pause_for_comment=False)
+    playback = RefutationPlayback(window)
+    (origin_fen, refutation), = puzzle_session.avoided_refutations()
+
+    playback.start(refutation, origin=chess.Board(origin_fen))
+    board_view = window._layout.board
+    # First draw is the decision point itself (no move), then the trap plays.
+    assert board_view.moves[0] is None
+    assert board_view.positions[0] == origin_fen
+    assert board_view.moves[1] == chess.Move.from_uci("f2f3")
+
+    window.root.fire()
+    window.root.fire()
+    window.root.fire()
+    assert playback.advance()  # from the final position: return
+    # ... to the *session* board (the solved position), not the origin.
+    assert board_view.positions[-1] == puzzle_session.board.fen()
+    assert "complete" in window._status_var.value.lower()
+    assert not playback.active
+
+
+def test_pause_playback_setting_waits_on_every_move() -> None:
+    session = _blundered_session()
+    window = FakeWindow(session, pause_for_comment=False, pause_playback=True)
+    playback = RefutationPlayback(window)
+
+    playback.start(session.last_refutation)
+    # Even silent moves wait for the continue key: no timers, ever.
+    for expected_moves in (1, 2, 3):
+        assert len(window._layout.board.moves) == expected_moves
+        assert window.root.pending == {}
+        assert playback.advance()
+    assert len(window._layout.board.moves) == 4  # final position, waiting
+    assert playback.advance()  # rewind
+    assert not playback.active
 
 
 def test_cancel_stops_timers_and_deactivates() -> None:

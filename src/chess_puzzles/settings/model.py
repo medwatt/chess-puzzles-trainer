@@ -25,6 +25,7 @@ class AppSettings:
     auto_next_enabled: bool = True
     clean_comments: bool = False
     pause_for_comment: bool = True
+    pause_playback_each_move: bool = False
     font_family: str = ""
     font_size: int = 10
     font_style: str = "regular"
@@ -54,6 +55,7 @@ class AppSettings:
             auto_next_enabled=bool(data.get("auto_next_enabled", defaults.auto_next_enabled)),
             clean_comments=bool(data.get("clean_comments", defaults.clean_comments)),
             pause_for_comment=bool(data.get("pause_for_comment", defaults.pause_for_comment)),
+            pause_playback_each_move=bool(data.get("pause_playback_each_move", defaults.pause_playback_each_move)),
             font_family=str(data.get("font_family", defaults.font_family)),
             font_size=int(data.get("font_size", defaults.font_size)),
             font_style=str(data.get("font_style", defaults.font_style)),

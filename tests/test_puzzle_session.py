@@ -108,6 +108,70 @@ def test_reset_restores_tree_cursor() -> None:
     assert session.play_user_move(chess.Move.from_uci("f2f3")) is MoveResult.BLUNDER
 
 
+MINED_PGN = """[Event "Blunder check"]
+[Result "*"]
+
+{Find a safe move.} 1. e4 {Safe.} ( 1. f3 $4 {trap} 1... e5 2. g4 Qh4# )
+( 1. Nf3 {Also safe.} ) *
+"""
+
+
+def test_leaf_alternative_is_an_accepted_final_answer() -> None:
+    puzzle = Puzzle(
+        title="Mined",
+        initial_fen=chess.STARTING_FEN,
+        moves=(chess.Move.from_uci("e2e4"),),
+        pgn_text=MINED_PGN,
+    )
+    session = PuzzleSession(puzzle, chess.WHITE)
+
+    # Nf3 is approved and has no continuation: the drill completes there.
+    assert session.play_user_move(chess.Move.from_uci("g1f3")) is MoveResult.COMPLETE
+    assert session.is_complete
+    assert session.mistakes == 0
+    assert session.board.move_stack == [chess.Move.from_uci("g1f3")]
+
+    # The trap at the decision point is still reported as walked past.
+    avoided = session.avoided_refutations()
+    assert len(avoided) == 1
+    assert avoided[0][1].move == chess.Move.from_uci("f2f3")
+
+
+def test_alternative_with_continuation_still_does_not_complete() -> None:
+    # In TREE_PGN the d4 sideline continues (1...d5), so it stays a
+    # non-terminal ALTERNATIVE rather than an accepted answer.
+    session = PuzzleSession(_tree_puzzle(), chess.WHITE)
+    assert session.play_user_move(chess.Move.from_uci("d2d4")) is MoveResult.ALTERNATIVE
+    assert not session.is_complete
+
+
+def test_avoided_refutations_lists_traps_the_user_never_played() -> None:
+    session = PuzzleSession(_tree_puzzle(), chess.WHITE)
+    assert session.avoided_refutations() == []  # nothing played yet
+
+    assert session.play_user_move(chess.Move.from_uci("e2e4")) is MoveResult.CORRECT
+    avoided = session.avoided_refutations()
+    assert len(avoided) == 1
+    fen, refutation = avoided[0]
+    assert fen == chess.Board(chess.STARTING_FEN).fen()
+    assert refutation.move == chess.Move.from_uci("f2f3")
+
+    # Opponent decision points contribute nothing.
+    assert session.play_computer_move() == chess.Move.from_uci("e7e5")
+    assert len(session.avoided_refutations()) == 1
+
+
+def test_avoided_refutations_empty_without_a_tree() -> None:
+    puzzle = Puzzle(
+        title="No tree",
+        initial_fen=chess.STARTING_FEN,
+        moves=(chess.Move.from_uci("e2e4"),),
+    )
+    session = PuzzleSession(puzzle, chess.WHITE)
+    session.play_user_move(chess.Move.from_uci("e2e4"))
+    assert session.avoided_refutations() == []
+
+
 def test_session_counts_incorrect_moves_and_reset_clears_them() -> None:
     puzzle = Puzzle(
         title="Mistakes",

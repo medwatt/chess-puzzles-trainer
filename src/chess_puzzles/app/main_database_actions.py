@@ -10,6 +10,10 @@ import chess
 
 from chess_puzzles.database.manager import DatabaseManagerDialog
 from chess_puzzles.dialogs.choice import ChoiceDialog
+from chess_puzzles.engine.config import load_engine_config
+from chess_puzzles.mining import MiningCriteria, mined_to_puzzles, save_mining_settings
+from chess_puzzles.mining.dialog import BlunderMineDialog
+from chess_puzzles.mining.runner import MiningRunDialog
 from chess_puzzles.pgn.exporter import export_puzzles_to_pgn
 from chess_puzzles.puzzle import Puzzle
 from chess_puzzles.puzzle.tree import MoveTree
@@ -152,6 +156,60 @@ class MainDatabaseActions:
             messagebox.showerror("Could not open database", str(exc), parent=window.root)
             return
         self._use_database(database, path)
+
+    def generate_blunder_puzzles(self) -> None:
+        window = self.window
+        engine = load_engine_config().default_engine
+        engine_ok = engine is not None and Path(engine.command).is_file()
+        options = BlunderMineDialog(window.root, engine.name if engine_ok else None).show_modal()
+        if options is None:
+            return
+        if not engine_ok:
+            # The dialog disables Generate without an engine, but Return can
+            # still submit it; refuse rather than crash mid-run.
+            messagebox.showerror(
+                "No engine", "Configure a UCI engine first (Engines menu).", parent=window.root
+            )
+            return
+        try:
+            save_mining_settings(options.to_settings())
+        except OSError:
+            pass
+        criteria = MiningCriteria(rating_min=options.rating_min, rating_max=options.rating_max)
+        mined = MiningRunDialog(
+            window.root,
+            engine_command=engine.command,
+            engine_threads=engine.threads,
+            engine_options=engine.options,
+            csv_path=options.csv_path,
+            count=options.count,
+            criteria=criteria,
+        ).show_modal()
+        if not mined:
+            window._status_var.set("No blunder puzzles generated.")
+            return
+        puzzles = mined_to_puzzles(mined)
+        default_name = f"blunder_check_{options.rating_min}-{options.rating_max}.cpdb"
+        save_path = self._ask_save_path(default_name)
+        if not save_path:
+            return
+        meta = ContentMeta(
+            database_id=str(uuid.uuid4()),
+            name=Path(save_path).stem,
+            description=(
+                f"Generated blunder-check deck: rating {options.rating_min}-{options.rating_max}, "
+                f"{len(puzzles)} puzzles, engine '{engine.name}'."
+            ),
+            source_kind="mined",
+            source_path=str(options.csv_path),
+            created_at=now_iso(),
+            updated_at=now_iso(),
+        )
+        database = self._create_database(save_path, meta, puzzles)
+        if database is None:
+            return
+        self._use_database(database, Path(save_path))
+        window._status_var.set(f"Generated {len(puzzles)} blunder puzzle(s).")
 
     def import_lichess_csv(self) -> None:
         window = self.window
