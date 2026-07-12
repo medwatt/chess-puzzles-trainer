@@ -27,6 +27,10 @@ class PuzzleSession:
 
     puzzle: Puzzle
     player_color: chess.Color
+    # Plies at the start of the line that are already known from the previous
+    # line of the same course game (see puzzle.prefix). They are recapped, not
+    # solved: both sides' moves auto-play and user input waits.
+    prefix_length: int = 0
     board: chess.Board = field(init=False)
     move_index: int = 0
     last_result: MoveResult | None = None
@@ -44,6 +48,10 @@ class PuzzleSession:
     @property
     def is_complete(self) -> bool:
         return self.move_index >= len(self.puzzle.moves)
+
+    @property
+    def in_prefix(self) -> bool:
+        return self.move_index < self.prefix_length and not self.is_complete
 
     @property
     def expected_move(self) -> chess.Move | None:
@@ -81,6 +89,11 @@ class PuzzleSession:
             self.last_result = MoveResult.COMPLETE
             return self.last_result
 
+        if self.in_prefix:
+            # The recap is still playing; input resumes at the divergence point.
+            self.last_result = MoveResult.WAITING
+            return self.last_result
+
         if self.board.turn != self.player_color:
             self.last_result = MoveResult.WAITING
             return self.last_result
@@ -97,6 +110,17 @@ class PuzzleSession:
         self._push(legal_move)
         self.last_result = MoveResult.COMPLETE if self.is_complete else MoveResult.CORRECT
         return self.last_result
+
+    def play_prefix_move(self) -> chess.Move | None:
+        """Advance one recap ply -- either side's move, no grading involved."""
+        if not self.in_prefix:
+            return None
+        move = self.expected_move
+        if move is None:
+            return None
+        self._push(move)
+        self.last_result = MoveResult.COMPLETE if self.is_complete else MoveResult.WAITING
+        return move
 
     def play_computer_move(self) -> chess.Move | None:
         if self.is_complete or self.board.turn == self.player_color:

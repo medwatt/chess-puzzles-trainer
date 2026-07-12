@@ -15,7 +15,21 @@ from chess_puzzles.store.identity import puzzle_fingerprint
 from chess_puzzles.store.sql import CONTENT_SCHEMA_SQL
 
 
-_META_KEYS = ("database_id", "name", "description", "source_kind", "source_path", "created_at", "updated_at")
+_META_KEYS = (
+    "database_id",
+    "name",
+    "description",
+    "source_kind",
+    "source_path",
+    "created_at",
+    "updated_at",
+)
+
+# Deck kinds, stored under the free-form meta key "kind". A deck without the
+# key is a tactics deck -- every database created before deck kinds existed
+# reads correctly with no migration.
+DECK_KIND_TACTICS = "tactics"
+DECK_KIND_REPERTOIRE = "repertoire"
 
 _COLOR_TO_TEXT = {chess.WHITE: "white", chess.BLACK: "black"}
 _TEXT_TO_COLOR = {"white": chess.WHITE, "black": chess.BLACK}
@@ -37,7 +51,9 @@ class ContentDatabase:
         self._conn = conn
 
     @classmethod
-    def create(cls, path: str | Path, meta: ContentMeta, puzzles: Iterable[Puzzle]) -> "ContentDatabase":
+    def create(
+        cls, path: str | Path, meta: ContentMeta, puzzles: Iterable[Puzzle]
+    ) -> "ContentDatabase":
         path = Path(path)
         tmp_path = path.with_name(path.name + ".tmp")
         tmp_path.unlink(missing_ok=True)
@@ -59,7 +75,9 @@ class ContentDatabase:
         return cls._populate(_connect(":memory:"), meta, puzzles)
 
     @classmethod
-    def _populate(cls, conn: sqlite3.Connection, meta: ContentMeta, puzzles: Iterable[Puzzle]) -> "ContentDatabase":
+    def _populate(
+        cls, conn: sqlite3.Connection, meta: ContentMeta, puzzles: Iterable[Puzzle]
+    ) -> "ContentDatabase":
         conn.executescript(CONTENT_SCHEMA_SQL)
         with conn:
             conn.executemany(
@@ -70,7 +88,10 @@ class ContentDatabase:
                 "INSERT INTO puzzle (puzzle_id, ordinal, title, initial_fen, moves, comments, headers,"
                 " pgn_text, player_color, skip_first_move, theme, created_at)"
                 " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                (_puzzle_to_row(puzzle, ordinal) for ordinal, puzzle in enumerate(puzzles, start=1)),
+                (
+                    _puzzle_to_row(puzzle, ordinal)
+                    for ordinal, puzzle in enumerate(puzzles, start=1)
+                ),
             )
         return cls(conn)
 
@@ -102,6 +123,23 @@ class ContentDatabase:
             self._conn.execute("UPDATE meta SET value = ? WHERE key = 'name'", (name,))
             self._touch()
 
+    def meta_value(self, key: str, default: str = "") -> str:
+        row = self._conn.execute("SELECT value FROM meta WHERE key = ?", (key,)).fetchone()
+        return row["value"] if row is not None and row["value"] else default
+
+    def set_meta_value(self, key: str, value: str) -> None:
+        with self._conn:
+            self._conn.execute(
+                "INSERT INTO meta (key, value) VALUES (?, ?)"
+                " ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+                (key, value),
+            )
+            self._touch()
+
+    @property
+    def kind(self) -> str:
+        return self.meta_value("kind", DECK_KIND_TACTICS)
+
     def count(self) -> int:
         return self._conn.execute("SELECT COUNT(*) FROM puzzle").fetchone()[0]
 
@@ -130,15 +168,21 @@ class ContentDatabase:
             yield _row_to_puzzle(row)
 
     def themes(self) -> list[str]:
-        rows = self._conn.execute("SELECT DISTINCT theme FROM puzzle WHERE theme <> '' ORDER BY theme")
+        rows = self._conn.execute(
+            "SELECT DISTINCT theme FROM puzzle WHERE theme <> '' ORDER BY theme"
+        )
         return [row["theme"] for row in rows]
 
     def theme_position(self, index: int) -> tuple[int, int] | None:
-        row = self._conn.execute("SELECT theme, ordinal FROM puzzle WHERE ordinal = ?", (index + 1,)).fetchone()
+        row = self._conn.execute(
+            "SELECT theme, ordinal FROM puzzle WHERE ordinal = ?", (index + 1,)
+        ).fetchone()
         if row is None or not row["theme"]:
             return None
         theme, ordinal = row["theme"], row["ordinal"]
-        total = self._conn.execute("SELECT COUNT(*) FROM puzzle WHERE theme = ?", (theme,)).fetchone()[0]
+        total = self._conn.execute(
+            "SELECT COUNT(*) FROM puzzle WHERE theme = ?", (theme,)
+        ).fetchone()[0]
         position = self._conn.execute(
             "SELECT COUNT(*) FROM puzzle WHERE theme = ? AND ordinal <= ?", (theme, ordinal)
         ).fetchone()[0]
@@ -147,7 +191,8 @@ class ContentDatabase:
     def set_skip_first_move(self, ordinal: int, value: bool) -> None:
         with self._conn:
             self._conn.execute(
-                "UPDATE puzzle SET skip_first_move = ? WHERE ordinal = ?", (1 if value else 0, ordinal)
+                "UPDATE puzzle SET skip_first_move = ? WHERE ordinal = ?",
+                (1 if value else 0, ordinal),
             )
             self._touch()
 
@@ -207,7 +252,8 @@ def _row_to_puzzle(row: sqlite3.Row) -> Puzzle:
 def _puzzle_to_row(puzzle: Puzzle, ordinal: int) -> tuple:
     moves = [move.uci() for move in puzzle.moves]
     return (
-        puzzle.puzzle_id or puzzle_fingerprint(puzzle.initial_fen, tuple(moves), tuple(puzzle.comments)),
+        puzzle.puzzle_id
+        or puzzle_fingerprint(puzzle.initial_fen, tuple(moves), tuple(puzzle.comments)),
         ordinal,
         puzzle.title,
         puzzle.initial_fen,

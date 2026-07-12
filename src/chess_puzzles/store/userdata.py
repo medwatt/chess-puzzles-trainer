@@ -94,8 +94,31 @@ class UserStore:
                 "INSERT INTO attempt"
                 " (puzzle_id, at, outcome, mistakes, aids, duration_ms, grade, database_id, database_path)"
                 " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                (a.puzzle_id, a.at, a.outcome, a.mistakes, a.aids, a.duration_ms, a.grade, a.database_id, a.database_path),
+                (
+                    a.puzzle_id,
+                    a.at,
+                    a.outcome,
+                    a.mistakes,
+                    a.aids,
+                    a.duration_ms,
+                    a.grade,
+                    a.database_id,
+                    a.database_path,
+                ),
             )
+
+    def has_solved(self, puzzle_id: str) -> bool:
+        """Whether this content was ever solved (in any deck).
+
+        Unknown lines get special treatment (a repertoire line is demonstrated
+        before it is quizzed), and giving up is evidence of *not* knowing the
+        line -- only a solve anywhere marks the content as known.
+        """
+        row = self._conn.execute(
+            "SELECT 1 FROM attempt WHERE puzzle_id = ? AND outcome = 'solved' LIMIT 1",
+            (puzzle_id,),
+        ).fetchone()
+        return row is not None
 
     def record_vision_attempt(self, a: VisionAttempt) -> None:
         with self._conn:
@@ -118,8 +141,51 @@ class UserStore:
                 ),
             )
 
+    # --- per-deck reset ----------------------------------------------------
+    # Everything the user store knows about one deck, deletable piece by
+    # piece so "start this course from scratch" is possible without touching
+    # other decks. Notes are deliberately excluded: they are keyed by content
+    # and shared across decks. Attempts whose locator predates the migration
+    # ('' database_id) cannot be attributed and are left alone.
+
+    def deck_attempt_count(self, database_id: str) -> int:
+        return self._conn.execute(
+            "SELECT COUNT(*) FROM attempt WHERE database_id = ?", (database_id,)
+        ).fetchone()[0]
+
+    def delete_deck_attempts(self, database_id: str) -> int:
+        with self._conn:
+            cursor = self._conn.execute("DELETE FROM attempt WHERE database_id = ?", (database_id,))
+        return cursor.rowcount
+
+    def deck_favorite_count(self, database_id: str) -> int:
+        return self._conn.execute(
+            "SELECT COUNT(*) FROM favorite WHERE database_id = ?", (database_id,)
+        ).fetchone()[0]
+
+    def delete_deck_favorites(self, database_id: str) -> int:
+        with self._conn:
+            cursor = self._conn.execute(
+                "DELETE FROM favorite WHERE database_id = ?", (database_id,)
+            )
+        return cursor.rowcount
+
+    def vision_attempt_count(self) -> int:
+        return self._conn.execute("SELECT COUNT(*) FROM vision_attempt").fetchone()[0]
+
+    def delete_vision_attempts(self) -> int:
+        with self._conn:
+            cursor = self._conn.execute("DELETE FROM vision_attempt")
+        return cursor.rowcount
+
+    def delete_ui(self, key: str) -> None:
+        with self._conn:
+            self._conn.execute("DELETE FROM ui_state WHERE key = ?", (key,))
+
     def get_note(self, puzzle_id: str) -> str:
-        row = self._conn.execute("SELECT text FROM note WHERE puzzle_id = ?", (puzzle_id,)).fetchone()
+        row = self._conn.execute(
+            "SELECT text FROM note WHERE puzzle_id = ?", (puzzle_id,)
+        ).fetchone()
         return row["text"] if row is not None else ""
 
     def set_note(self, puzzle_id: str, text: str) -> None:
@@ -135,7 +201,8 @@ class UserStore:
 
     def is_favorite(self, puzzle_id: str, database_id: str) -> bool:
         row = self._conn.execute(
-            "SELECT 1 FROM favorite WHERE puzzle_id = ? AND database_id = ?", (puzzle_id, database_id)
+            "SELECT 1 FROM favorite WHERE puzzle_id = ? AND database_id = ?",
+            (puzzle_id, database_id),
         ).fetchone()
         return row is not None
 
@@ -151,11 +218,14 @@ class UserStore:
     def remove_favorite(self, puzzle_id: str, database_id: str) -> None:
         with self._conn:
             self._conn.execute(
-                "DELETE FROM favorite WHERE puzzle_id = ? AND database_id = ?", (puzzle_id, database_id)
+                "DELETE FROM favorite WHERE puzzle_id = ? AND database_id = ?",
+                (puzzle_id, database_id),
             )
 
     def favorite_ids(self, database_id: str) -> set[str]:
-        rows = self._conn.execute("SELECT puzzle_id FROM favorite WHERE database_id = ?", (database_id,))
+        rows = self._conn.execute(
+            "SELECT puzzle_id FROM favorite WHERE database_id = ?", (database_id,)
+        )
         return {row["puzzle_id"] for row in rows}
 
     def favorite_refs(self) -> list[FavoriteRef]:
@@ -163,14 +233,14 @@ class UserStore:
             "SELECT puzzle_id, database_id, database_path FROM favorite ORDER BY added_at, database_id, puzzle_id"
         )
         return [
-            FavoriteRef(row["puzzle_id"], row["database_id"], row["database_path"])
-            for row in rows
+            FavoriteRef(row["puzzle_id"], row["database_id"], row["database_path"]) for row in rows
         ]
 
     def update_favorite_database_path(self, database_id: str, database_path: str) -> None:
         with self._conn:
             self._conn.execute(
-                "UPDATE favorite SET database_path = ? WHERE database_id = ?", (database_path, database_id)
+                "UPDATE favorite SET database_path = ? WHERE database_id = ?",
+                (database_path, database_id),
             )
 
     def get_ui(self, key: str) -> str | None:

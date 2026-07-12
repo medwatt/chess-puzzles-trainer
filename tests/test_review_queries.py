@@ -14,9 +14,15 @@ def _attempt(
     database_path: str = "/tmp/deck.cpdb",
 ) -> Attempt:
     return Attempt(
-        puzzle_id=puzzle_id, at=at, outcome="solved" if grade != "again" else "gave_up",
-        mistakes=0, aids=0, grade=grade, duration_ms=duration_ms,
-        database_id=database_id, database_path=database_path,
+        puzzle_id=puzzle_id,
+        at=at,
+        outcome="solved" if grade != "again" else "gave_up",
+        mistakes=0,
+        aids=0,
+        grade=grade,
+        duration_ms=duration_ms,
+        database_id=database_id,
+        database_path=database_path,
     )
 
 
@@ -54,15 +60,52 @@ def test_most_overdue_first(tmp_path) -> None:
 def test_locator_is_latest_non_empty(tmp_path) -> None:
     store = _store(tmp_path)
     # A pre-migration attempt (no locator) followed by a located one.
-    store.record_attempt(_attempt("p1", "2026-06-01T00:00:00Z", "again", database_id="", database_path=""))
-    store.record_attempt(_attempt("p1", "2026-07-01T00:00:00Z", "hard", database_path="/tmp/new.cpdb"))
+    store.record_attempt(
+        _attempt("p1", "2026-06-01T00:00:00Z", "again", database_id="", database_path="")
+    )
+    store.record_attempt(
+        _attempt("p1", "2026-07-01T00:00:00Z", "hard", database_path="/tmp/new.cpdb")
+    )
     due = due_reviews(store.connection, now=_NOW)
     assert due[0].database_path == "/tmp/new.cpdb"
 
 
 def test_legacy_attempts_still_schedule_without_a_locator(tmp_path) -> None:
     store = _store(tmp_path)
-    store.record_attempt(_attempt("p1", "2026-07-01T00:00:00Z", "again", database_id="", database_path=""))
+    store.record_attempt(
+        _attempt("p1", "2026-07-01T00:00:00Z", "again", database_id="", database_path="")
+    )
     due = due_reviews(store.connection, now=_NOW)
     assert due[0].puzzle_id == "p1"
     assert due[0].database_path == ""
+
+
+def test_scoped_queue_keeps_only_that_decks_items(tmp_path) -> None:
+    store = _store(tmp_path)
+    store.record_attempt(_attempt("opening", "2026-07-01T00:00:00Z", "again", database_id="course"))
+    store.record_attempt(_attempt("tactic", "2026-07-01T00:00:00Z", "again", database_id="tactics"))
+
+    due = due_reviews(store.connection, now=_NOW, database_id="course")
+
+    assert [review.puzzle_id for review in due] == ["opening"]
+
+
+def test_scoped_queue_keeps_locatorless_items(tmp_path) -> None:
+    # Attempts predating the locator migration ('' locator) resolve only
+    # against the open deck, so a scoped queue must keep them.
+    store = _store(tmp_path)
+    store.record_attempt(
+        _attempt("ancient", "2026-07-01T00:00:00Z", "again", database_id="", database_path="")
+    )
+
+    due = due_reviews(store.connection, now=_NOW, database_id="course")
+
+    assert [review.puzzle_id for review in due] == ["ancient"]
+
+
+def test_unscoped_queue_is_unchanged_by_scope_default(tmp_path) -> None:
+    store = _store(tmp_path)
+    store.record_attempt(_attempt("a", "2026-07-01T00:00:00Z", "again", database_id="one"))
+    store.record_attempt(_attempt("b", "2026-07-01T00:00:00Z", "again", database_id="two"))
+
+    assert len(due_reviews(store.connection, now=_NOW)) == 2

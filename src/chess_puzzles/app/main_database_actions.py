@@ -14,7 +14,10 @@ from chess_puzzles.engine.config import load_engine_config
 from chess_puzzles.mining import MiningCriteria, mined_to_puzzles, save_mining_settings
 from chess_puzzles.mining.dialog import BlunderMineDialog
 from chess_puzzles.mining.runner import MiningRunDialog
+from chess_puzzles.dialogs.repertoire_import import RepertoireImportDialog
+from chess_puzzles.dialogs.reset_userdata import ResetUserdataDialog
 from chess_puzzles.pgn.exporter import export_puzzles_to_pgn
+from chess_puzzles.pgn.repertoire import profile_pgn_file
 from chess_puzzles.puzzle import Puzzle
 from chess_puzzles.puzzle.tree import MoveTree
 from chess_puzzles.lichess import (
@@ -25,7 +28,13 @@ from chess_puzzles.lichess import (
     save_lichess_settings,
 )
 from chess_puzzles.review import DueReview, due_reviews
-from chess_puzzles.store import ContentDatabase, ContentMeta, FavoriteRef, now_iso
+from chess_puzzles.store import (
+    DECK_KIND_REPERTOIRE,
+    ContentDatabase,
+    ContentMeta,
+    FavoriteRef,
+    now_iso,
+)
 
 if TYPE_CHECKING:
     from chess_puzzles.app.main_window import MainWindow
@@ -96,7 +105,11 @@ class MainDatabaseActions:
             messagebox.showerror("Could not load PGN", str(exc), parent=window.root)
             return
         if not puzzles:
-            messagebox.showinfo("No puzzles found", "The selected PGN did not contain any games.", parent=window.root)
+            messagebox.showinfo(
+                "No puzzles found",
+                "The selected PGN did not contain any games.",
+                parent=window.root,
+            )
             return
         # Variation-rich files (repertoires, annotated courses) can be split
         # so every line becomes its own drillable puzzle. Files without
@@ -136,6 +149,75 @@ class MainDatabaseActions:
             return
         self._use_database(database, Path(save_path))
         window._status_var.set(f"Created database with {len(puzzles)} puzzle(s).")
+
+    def import_opening_course(self) -> None:
+        """Create a repertoire deck from a course PGN, one puzzle per line.
+
+        The heuristic course profile pre-fills the dialog (trained side,
+        chapter/title headers); the user's confirmed choices drive the
+        line-split load. The deck is marked ``kind=repertoire`` so training
+        policy can treat it as an opening deck."""
+        window = self.window
+        path = filedialog.askopenfilename(
+            parent=window.root,
+            title="Import opening course (PGN)",
+            initialdir=self._database_initialdir(),
+            filetypes=(("PGN files", "*.pgn"), ("All files", "*.*")),
+        )
+        if not path:
+            return
+        window.root.configure(cursor="watch")
+        window.root.update_idletasks()
+        try:
+            profile = profile_pgn_file(path)
+        except Exception as exc:
+            messagebox.showerror("Could not read PGN", str(exc), parent=window.root)
+            return
+        finally:
+            window.root.configure(cursor="")
+        if profile.game_count == 0:
+            messagebox.showinfo(
+                "No games found", "The selected PGN did not contain any games.", parent=window.root
+            )
+            return
+        pgn_path = Path(path)
+        choices = RepertoireImportDialog(window.root, pgn_path.stem, profile).show_modal()
+        if choices is None:
+            return
+        try:
+            puzzles = window.loader.load_file(path, split_lines=True, choices=choices)
+        except Exception as exc:
+            messagebox.showerror("Could not load PGN", str(exc), parent=window.root)
+            return
+        if not puzzles:
+            messagebox.showinfo(
+                "No puzzles found",
+                "The selected PGN did not contain any lines.",
+                parent=window.root,
+            )
+            return
+        save_path = self._ask_save_path(f"{pgn_path.stem}.cpdb")
+        if not save_path:
+            return
+        side_name = "White" if choices.trained_side == chess.WHITE else "Black"
+        chapters = len({puzzle.theme for puzzle in puzzles if puzzle.theme})
+        meta = ContentMeta(
+            database_id=str(uuid.uuid4()),
+            name=pgn_path.stem,
+            description=f"Opening course, trained as {side_name}.",
+            source_kind="pgn",
+            source_path=str(pgn_path),
+            created_at=now_iso(),
+            updated_at=now_iso(),
+        )
+        database = self._create_database(save_path, meta, puzzles)
+        if database is None:
+            return
+        database.set_meta_value("kind", DECK_KIND_REPERTOIRE)
+        self._use_database(database, Path(save_path))
+        window._status_var.set(
+            f"Imported course: {len(puzzles)} line(s) in {chapters} chapter(s), training as {side_name}."
+        )
 
     def open_database(self, database_path: Path | None = None) -> None:
         window = self.window
@@ -232,7 +314,9 @@ class MainDatabaseActions:
         finally:
             window.root.configure(cursor="")
         if not puzzles:
-            messagebox.showinfo("No puzzles found", "No puzzles matched the selected filters.", parent=window.root)
+            messagebox.showinfo(
+                "No puzzles found", "No puzzles matched the selected filters.", parent=window.root
+            )
             return
         save_path = self._ask_save_path(DEFAULT_LICHESS_DATABASE_FILENAME)
         if not save_path:
@@ -262,7 +346,9 @@ class MainDatabaseActions:
             filetypes=DATABASE_FILETYPES,
         )
 
-    def _create_database(self, save_path: str, meta: ContentMeta, puzzles) -> ContentDatabase | None:
+    def _create_database(
+        self, save_path: str, meta: ContentMeta, puzzles
+    ) -> ContentDatabase | None:
         window = self.window
         # Overwriting the deck that is currently open: release our handle first so
         # create() can replace the file (the file is locked while open on Windows)
@@ -288,6 +374,17 @@ class MainDatabaseActions:
             empty_status="Database is empty.",
         )
         self._remember_recent_database(path)
+        self._announce_due_reviews(database)
+
+    def _announce_due_reviews(self, database: ContentDatabase) -> None:
+        """Transient status note so a course's due lines have a visible trigger."""
+        if database.kind != DECK_KIND_REPERTOIRE:
+            return
+        due = due_reviews(self.window.user_store.connection, database_id=database.database_id)
+        if due:
+            self.window._status_var.set(
+                f"{len(due)} line(s) due for review — Favorites > Review mistakes (this deck)."
+            )
 
     def _activate_database(
         self,
@@ -327,7 +424,9 @@ class MainDatabaseActions:
     def show_empty_state(self, status: str) -> None:
         window = self.window
         window.session = None
-        window._title_var.set(window.database.meta.name if window.database is not None else "No puzzle loaded")
+        window._title_var.set(
+            window.database.meta.name if window.database is not None else "No puzzle loaded"
+        )
         window._layout.board.set_position(chess.Board())
         window.clear_puzzle_info()
         window._update_favorite_button()
@@ -338,7 +437,11 @@ class MainDatabaseActions:
         window = self.window
         value = str(path)
         recent = [value]
-        recent.extend(existing for existing in window.state.settings.recent_database_paths if existing != value)
+        recent.extend(
+            existing
+            for existing in window.state.settings.recent_database_paths
+            if existing != value
+        )
         window.save_settings(recent_database_paths=tuple(recent[:10]))
         window._menu.refresh_recent_menu()
 
@@ -409,19 +512,29 @@ class MainDatabaseActions:
                 db.close()
         return favorites
 
-    def review_mistakes(self) -> None:
+    def review_mistakes(self, scope: str = "all") -> None:
         """Serve the puzzles due for review as an in-memory deck.
 
-        Solving them records attempts as usual, which is what reschedules them:
-        due-ness is derived from the attempt log, so there is no review state
-        to update here."""
+        ``scope`` mirrors the favorites views: "deck" reviews only the open
+        deck's due items (an opening course is reviewed in its own context),
+        "all" is the cross-deck daily sweep. Solving them records attempts as
+        usual, which is what reschedules them: due-ness is derived from the
+        attempt log, so there is no review state to update here."""
         window = self.window
-        due = due_reviews(window.user_store.connection)
+        if scope == "deck":
+            if window.database is None or window.favorites_view:
+                window._status_var.set("Open a deck to review its mistakes.")
+                return
+            due = due_reviews(window.user_store.connection, database_id=window.database.database_id)
+            label = f"Review {window.database.meta.name}"
+        else:
+            due = due_reviews(window.user_store.connection)
+            label = "Review"
         pairs = self._resolve_reviews(due)
         if not pairs:
             window._status_var.set("No puzzles due for review.")
             return
-        self._use_favorites_view(pairs, f"Review — {len(pairs)} due", review=True)
+        self._use_favorites_view(pairs, f"{label} — {len(pairs)} due", review=True)
 
     def _resolve_reviews(self, due: list[DueReview]):
         """Map due reviews to their puzzle content, preserving most-overdue order.
@@ -437,7 +550,9 @@ class MainDatabaseActions:
             elif window.database is not None and not window.favorites_view:
                 puzzle = window.database.puzzle_by_id(item.puzzle_id)
                 if puzzle is not None:
-                    ref = FavoriteRef(item.puzzle_id, window.database.database_id, str(window.database_path))
+                    ref = FavoriteRef(
+                        item.puzzle_id, window.database.database_id, str(window.database_path)
+                    )
                     resolved.append((order, puzzle, ref))
         for path, items in by_path.items():
             if not path.exists():
@@ -452,7 +567,13 @@ class MainDatabaseActions:
                         continue
                     puzzle = db.puzzle_by_id(item.puzzle_id)
                     if puzzle is not None:
-                        resolved.append((order, puzzle, FavoriteRef(item.puzzle_id, item.database_id, item.database_path)))
+                        resolved.append(
+                            (
+                                order,
+                                puzzle,
+                                FavoriteRef(item.puzzle_id, item.database_id, item.database_path),
+                            )
+                        )
             finally:
                 db.close()
         resolved.sort(key=lambda entry: entry[0])
@@ -461,7 +582,9 @@ class MainDatabaseActions:
     def _use_favorites_view(self, favorites, label: str, *, review: bool = False) -> None:
         puzzles = [puzzle for puzzle, _source in favorites]
         self.window.favorite_sources = [source for _puzzle, source in favorites]
-        meta = ContentMeta(database_id="favorites", name=label, created_at=now_iso(), updated_at=now_iso())
+        meta = ContentMeta(
+            database_id="favorites", name=label, created_at=now_iso(), updated_at=now_iso()
+        )
         view = ContentDatabase.in_memory(meta, puzzles)
         self._activate_database(
             view,
@@ -472,6 +595,39 @@ class MainDatabaseActions:
             title=label,
             empty_status="No favorites.",
         )
+
+    def reset_deck_userdata(self) -> None:
+        """Wipe the user's own records for the open deck (never its content).
+
+        Reloads the current puzzle afterwards, so a reset course immediately
+        behaves like day one -- first-encounter demonstrations included."""
+        window = self.window
+        if window.database is None or window.favorites_view:
+            window._status_var.set("Open a deck to reset its user data.")
+            return
+        store = window.user_store
+        database_id = window.database.database_id
+        choices = ResetUserdataDialog(
+            window.root,
+            window.database.meta.name,
+            attempt_count=store.deck_attempt_count(database_id),
+            favorite_count=store.deck_favorite_count(database_id),
+            vision_count=store.vision_attempt_count(),
+        ).show_modal()
+        if choices is None:
+            return
+        deleted: list[str] = []
+        if choices.attempts:
+            deleted.append(f"{store.delete_deck_attempts(database_id)} attempt(s)")
+        if choices.favorites:
+            deleted.append(f"{store.delete_deck_favorites(database_id)} favorite(s)")
+        if choices.position:
+            store.delete_ui(f"last_puzzle:{database_id}")
+            deleted.append("resume point")
+        if choices.vision:
+            deleted.append(f"{store.delete_vision_attempts()} vision drill(s)")
+        window.load_current_puzzle()
+        window._status_var.set(f"Deleted: {', '.join(deleted)}.")
 
     def delete_current_puzzle(self) -> None:
         window = self.window

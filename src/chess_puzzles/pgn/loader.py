@@ -7,24 +7,43 @@ from typing import TextIO
 import chess
 import chess.pgn
 
+from chess_puzzles.pgn.repertoire import ImportChoices
 from chess_puzzles.puzzle import Puzzle
 from chess_puzzles.puzzle.skip import infer_skip_first_move
 from chess_puzzles.puzzle.tree import MISTAKE_NAGS
 
 
+_NO_CHOICES = ImportChoices()
+
+
 class PgnLoader:
     """Adapter around python-chess PGN parsing."""
 
-    def load_file(self, path: str | Path, *, split_lines: bool = False) -> list[Puzzle]:
+    def load_file(
+        self,
+        path: str | Path,
+        *,
+        split_lines: bool = False,
+        choices: ImportChoices | None = None,
+    ) -> list[Puzzle]:
         with Path(path).open("r", encoding="utf-8-sig") as handle:
-            return self.load(handle, split_lines=split_lines)
+            return self.load(handle, split_lines=split_lines, choices=choices)
 
-    def load(self, handle: TextIO, *, split_lines: bool = False) -> list[Puzzle]:
+    def load(
+        self,
+        handle: TextIO,
+        *,
+        split_lines: bool = False,
+        choices: ImportChoices | None = None,
+    ) -> list[Puzzle]:
         # Normalise known exporter quirks, then parse each game into a puzzle,
         # keeping only games that are actually training items. With
         # ``split_lines`` each game instead becomes one puzzle per variation
         # line (see _build_line_puzzles) -- the repertoire import mode.
+        # ``choices`` carries the course-import answers (trained side, naming
+        # headers); the default changes nothing.
         stream = io.StringIO(self._collapse_movetext_blank_lines(handle.read()))
+        choices = choices or _NO_CHOICES
 
         puzzles: list[Puzzle] = []
         source_index = 0
@@ -34,20 +53,22 @@ class PgnLoader:
                 break
             source_index += 1
             built = (
-                self._build_line_puzzles(game, source_index)
+                self._build_line_puzzles(game, source_index, choices)
                 if split_lines
-                else [self._build_puzzle(game, source_index)]
+                else [self._build_puzzle(game, source_index, choices)]
             )
             puzzles.extend(puzzle for puzzle in built if self._has_content(puzzle))
         return puzzles
 
-    def _build_puzzle(self, game: chess.pgn.Game, source_index: int) -> Puzzle:
+    def _build_puzzle(
+        self, game: chess.pgn.Game, source_index: int, choices: ImportChoices = _NO_CHOICES
+    ) -> Puzzle:
         headers = {key: str(value) for key, value in game.headers.items()}
         moves, comments = self._mainline(game)
         initial_fen = game.board().fen()
-        player_color = self._player_color(headers)
+        player_color = self._player_color(headers, choices)
         return Puzzle(
-            title=self._title(headers, source_index),
+            title=self._title(headers, source_index, choices),
             initial_fen=initial_fen,
             moves=moves,
             comments=comments,
@@ -56,9 +77,12 @@ class PgnLoader:
             ordinal=source_index,
             player_color=player_color,
             skip_first_move=infer_skip_first_move(initial_fen, moves, player_color),
+            theme=self._header_value(headers, choices.chapter_field),
         )
 
-    def _build_line_puzzles(self, game: chess.pgn.Game, source_index: int) -> list[Puzzle]:
+    def _build_line_puzzles(
+        self, game: chess.pgn.Game, source_index: int, choices: ImportChoices = _NO_CHOICES
+    ) -> list[Puzzle]:
         """One puzzle per drillable variation line (repertoire import).
 
         A line is a maximal root-to-leaf path that never enters a variation
@@ -71,16 +95,19 @@ class PgnLoader:
         """
         lines = self._enumerate_lines(game)
         if not lines:
-            return [self._build_puzzle(game, source_index)]
+            return [self._build_puzzle(game, source_index, choices)]
 
         headers = {key: str(value) for key, value in game.headers.items()}
         initial_fen = game.board().fen()
-        player_color = self._player_color(headers)
-        base_title = self._title(headers, source_index)
+        player_color = self._player_color(headers, choices)
+        base_title = self._title(headers, source_index, choices)
+        theme = self._header_value(headers, choices.chapter_field) or base_title
         pgn_text = self._full_pgn_text(game)
         puzzles: list[Puzzle] = []
         for line_index, (moves, comments) in enumerate(lines, start=1):
-            title = base_title if len(lines) == 1 else f"{base_title} (line {line_index}/{len(lines)})"
+            title = (
+                base_title if len(lines) == 1 else f"{base_title} (line {line_index}/{len(lines)})"
+            )
             puzzles.append(
                 Puzzle(
                     title=title,
@@ -92,7 +119,7 @@ class PgnLoader:
                     ordinal=source_index,
                     player_color=player_color,
                     skip_first_move=infer_skip_first_move(initial_fen, moves, player_color),
-                    theme=base_title,
+                    theme=theme,
                 )
             )
         return puzzles
@@ -110,9 +137,7 @@ class PgnLoader:
 
         def walk(node: chess.pgn.GameNode, moves: list[chess.Move], comments: list[str]) -> None:
             playable = [
-                child
-                for child in node.variations
-                if child.move and not (MISTAKE_NAGS & child.nags)
+                child for child in node.variations if child.move and not (MISTAKE_NAGS & child.nags)
             ]
             if not playable:
                 if moves:
@@ -225,7 +250,13 @@ class PgnLoader:
         exporter = chess.pgn.StringExporter(headers=True, variations=True, comments=True)
         return game.accept(exporter)
 
-    def _title(self, headers: dict[str, str], source_index: int) -> str:
+    def _title(
+        self, headers: dict[str, str], source_index: int, choices: ImportChoices = _NO_CHOICES
+    ) -> str:
+        chosen = self._header_value(headers, choices.title_field)
+        if chosen:
+            return chosen
+
         event = headers.get("Event", "").strip()
         white = headers.get("White", "").strip()
         black = headers.get("Black", "").strip()
@@ -236,11 +267,21 @@ class PgnLoader:
 
         return event if event and event != "?" else f"Puzzle {source_index}"
 
-    def _player_color(self, headers: dict[str, str]) -> chess.Color | None:
+    @staticmethod
+    def _header_value(headers: dict[str, str], field: str) -> str:
+        if not field:
+            return ""
+        value = headers.get(field, "").strip()
+        return "" if value == "?" else value
+
+    def _player_color(
+        self, headers: dict[str, str], choices: ImportChoices = _NO_CHOICES
+    ) -> chess.Color | None:
         for key in ("PuzzleSide", "TrainingSide", "UserColor", "PlayerColor", "Orientation"):
             value = headers.get(key, "").strip().lower()
             if value in ("white", "w"):
                 return chess.WHITE
             if value in ("black", "b"):
                 return chess.BLACK
-        return None
+        # chess.BLACK is falsy; an explicit ``or`` chain would drop it.
+        return choices.trained_side

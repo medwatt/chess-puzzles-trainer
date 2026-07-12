@@ -14,16 +14,31 @@ CURRENT_USER_VERSION = 3
 
 def _attempt(outcome: str = "solved") -> Attempt:
     return Attempt(
-        puzzle_id="p1", at="2026-01-01T00:00:00Z", outcome=outcome,
-        mistakes=1, aids=0, grade="hard", duration_ms=4200,
+        puzzle_id="p1",
+        at="2026-01-01T00:00:00Z",
+        outcome=outcome,
+        mistakes=1,
+        aids=0,
+        grade="hard",
+        duration_ms=4200,
     )
 
 
-def _vision(drill_id: str = "reach-knight", *, passed: bool = True, elapsed_ms: int = 2000) -> VisionAttempt:
+def _vision(
+    drill_id: str = "reach-knight", *, passed: bool = True, elapsed_ms: int = 2000
+) -> VisionAttempt:
     return VisionAttempt(
-        drill_id=drill_id, at="2026-01-01T00:00:00Z", fen="8/8/8/8/8/8/8/8 w - - 0 1",
-        orientation=1, answer="1,2,3", clicks="1,2,3", tp=3, fp=0, fn=0,
-        passed=passed, elapsed_ms=elapsed_ms,
+        drill_id=drill_id,
+        at="2026-01-01T00:00:00Z",
+        fen="8/8/8/8/8/8/8/8 w - - 0 1",
+        orientation=1,
+        answer="1,2,3",
+        clicks="1,2,3",
+        tp=3,
+        fp=0,
+        fn=0,
+        passed=passed,
+        elapsed_ms=elapsed_ms,
     )
 
 
@@ -69,7 +84,9 @@ def test_record_attempt_appends_rows(tmp_path: Path) -> None:
     store = UserStore.open(tmp_path / "u.db")
     store.record_attempt(_attempt())
     store.record_attempt(_attempt("gave_up"))
-    rows = store._conn.execute("SELECT puzzle_id, outcome, mistakes FROM attempt ORDER BY id").fetchall()
+    rows = store._conn.execute(
+        "SELECT puzzle_id, outcome, mistakes FROM attempt ORDER BY id"
+    ).fetchall()
     assert [tuple(row) for row in rows] == [("p1", "solved", 1), ("p1", "gave_up", 1)]
 
 
@@ -133,3 +150,61 @@ def test_ui_state_and_persistence(tmp_path: Path) -> None:
     reopened = UserStore.open(path)
     assert reopened.get_ui("k") == "v2"
     assert reopened.get_note("p1") == "kept"
+
+
+def _deck_attempt(puzzle_id: str, database_id: str) -> Attempt:
+    return Attempt(
+        puzzle_id=puzzle_id,
+        at="2026-07-12T00:00:00Z",
+        outcome="solved",
+        mistakes=0,
+        aids=0,
+        grade="good",
+        duration_ms=1000,
+        database_id=database_id,
+        database_path=f"/tmp/{database_id}.cpdb",
+    )
+
+
+def test_deck_reset_deletes_only_that_decks_records(tmp_path: Path) -> None:
+    store = UserStore.open(tmp_path / "u.db")
+    store.record_attempt(_deck_attempt("p1", "course"))
+    store.record_attempt(_deck_attempt("p2", "course"))
+    store.record_attempt(_deck_attempt("p3", "tactics"))
+    store.add_favorite("p1", "course", "/tmp/course.cpdb")
+    store.add_favorite("p3", "tactics", "/tmp/tactics.cpdb")
+    store.set_ui("last_puzzle:course", "p2")
+
+    assert store.deck_attempt_count("course") == 2
+    assert store.delete_deck_attempts("course") == 2
+    assert store.deck_attempt_count("course") == 0
+    assert store.deck_attempt_count("tactics") == 1
+
+    assert store.deck_favorite_count("course") == 1
+    assert store.delete_deck_favorites("course") == 1
+    assert store.is_favorite("p3", "tactics")
+
+    store.delete_ui("last_puzzle:course")
+    assert store.get_ui("last_puzzle:course") is None
+
+
+def test_vision_history_reset(tmp_path: Path) -> None:
+    store = UserStore.open(tmp_path / "u.db")
+    store.record_vision_attempt(
+        VisionAttempt(
+            drill_id="hanging",
+            at="2026-07-12T00:00:00Z",
+            fen="8/8/8/8/8/8/4K3/7k w - - 0 1",
+            orientation=1,
+            answer="1,2",
+            clicks="1,2",
+            tp=2,
+            fp=0,
+            fn=0,
+            passed=True,
+            elapsed_ms=900,
+        )
+    )
+    assert store.vision_attempt_count() == 1
+    assert store.delete_vision_attempts() == 1
+    assert store.vision_attempt_count() == 0

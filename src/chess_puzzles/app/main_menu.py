@@ -29,7 +29,9 @@ class MainMenuBuilder:
             command=window.clear_recent_databases,
         )
         self._file_menu.add_separator()
-        self._file_menu.add_command(label="Exit", accelerator=MENU_ACCELERATORS[MainShortcuts.EXIT], command=window.close)
+        self._file_menu.add_command(
+            label="Exit", accelerator=MENU_ACCELERATORS[MainShortcuts.EXIT], command=window.close
+        )
         menu_bar.add_cascade(label="File", menu=self._file_menu)
 
         # Database menu
@@ -38,6 +40,10 @@ class MainMenuBuilder:
             label="New from PGN...",
             accelerator=MENU_ACCELERATORS[MainShortcuts.NEW_DATABASE_FROM_PGN],
             command=window.create_database_from_pgn,
+        )
+        database_menu.add_command(
+            label="Import opening course...",
+            command=window.import_opening_course,
         )
         database_menu.add_command(
             label="Import from Lichess CSV...",
@@ -61,22 +67,37 @@ class MainMenuBuilder:
         )
         menu_bar.add_cascade(label="Database", menu=database_menu)
 
-        # Favorites menu
-        favorites_menu = tk.Menu(menu_bar, tearoff=False)
-        favorites_menu.add_command(
+        # Training menu: reviewing, favorites, progress -- everything about
+        # the user's own training record, as opposed to deck content
+        # (Database menu) and board utilities (Tools menu).
+        training_menu = tk.Menu(menu_bar, tearoff=False)
+        training_menu.add_command(
+            label="Review mistakes (this deck)", command=window.review_mistakes_this_deck
+        )
+        training_menu.add_command(label="Review all mistakes", command=window.review_all_mistakes)
+        training_menu.add_separator()
+        training_menu.add_command(
             label="Toggle favorite",
             accelerator=MENU_ACCELERATORS[MainShortcuts.SAVE_FAVORITE],
             command=window.toggle_current_favorite,
         )
-        favorites_menu.add_separator()
-        favorites_menu.add_command(label="View favorites (this deck)", command=window.view_favorites_this_deck)
-        favorites_menu.add_command(label="View all favorites", command=window.view_all_favorites)
-        favorites_menu.add_separator()
-        favorites_menu.add_command(label="Review mistakes", command=window.review_mistakes)
-        favorites_menu.add_separator()
-        favorites_menu.add_command(label="Export favorites (this deck)...", command=window.export_favorites_this_deck)
-        favorites_menu.add_command(label="Export all favorites...", command=window.export_all_favorites)
-        menu_bar.add_cascade(label="Favorites", menu=favorites_menu)
+        training_menu.add_command(
+            label="View favorites (this deck)", command=window.view_favorites_this_deck
+        )
+        training_menu.add_command(label="View all favorites", command=window.view_all_favorites)
+        training_menu.add_command(
+            label="Export favorites (this deck)...", command=window.export_favorites_this_deck
+        )
+        training_menu.add_command(
+            label="Export all favorites...", command=window.export_all_favorites
+        )
+        training_menu.add_separator()
+        training_menu.add_command(label="Statistics...", command=window.show_statistics)
+        training_menu.add_separator()
+        training_menu.add_command(
+            label="Reset user data (this deck)...", command=window.reset_deck_userdata
+        )
+        menu_bar.add_cascade(label="Training", menu=training_menu)
 
         # Tools menu
         tools_menu = tk.Menu(menu_bar, tearoff=False)
@@ -139,7 +160,6 @@ class MainMenuBuilder:
             accelerator=MENU_ACCELERATORS[MainShortcuts.BOARD_VISION],
             command=window.open_board_vision_window,
         )
-        tools_menu.add_command(label="Statistics...", command=window.show_statistics)
         menu_bar.add_cascade(label="Tools", menu=tools_menu)
 
         # Engines menu
@@ -201,6 +221,16 @@ class MainMenuBuilder:
         settings_menu.add_checkbutton(
             label="Pause playback on every move",
             variable=window._pause_playback_var,
+            command=window.save_training_preferences,
+        )
+        settings_menu.add_checkbutton(
+            label="Start course lines at divergence",
+            variable=window._start_at_divergence_var,
+            command=window.on_start_at_divergence_changed,
+        )
+        settings_menu.add_checkbutton(
+            label="Demonstrate new lines first",
+            variable=window._demonstrate_var,
             command=window.save_training_preferences,
         )
         settings_menu.add_checkbutton(

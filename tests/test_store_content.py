@@ -183,3 +183,29 @@ def test_open_rejects_wrong_version(tmp_path: Path) -> None:
     conn.close()
     with pytest.raises(ValueError):
         ContentDatabase.open(path)
+
+
+def test_deck_kind_defaults_to_tactics() -> None:
+    db = ContentDatabase.in_memory(_meta(), _sample_puzzles())
+
+    assert db.kind == "tactics"
+    assert db.meta_value("kind", "tactics") == "tactics"
+
+
+def test_deck_kind_round_trips() -> None:
+    db = ContentDatabase.in_memory(_meta(), _sample_puzzles())
+
+    db.set_meta_value("kind", "repertoire")
+
+    assert db.kind == "repertoire"
+
+
+def test_set_meta_value_overwrites_existing_key() -> None:
+    db = ContentDatabase.in_memory(_meta(), _sample_puzzles())
+
+    db.set_meta_value("kind", "repertoire")
+    db.set_meta_value("kind", "tactics")
+
+    assert db.kind == "tactics"
+    # Free-form meta keys never leak into the structured meta view.
+    assert not hasattr(db.meta, "kind")

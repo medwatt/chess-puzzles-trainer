@@ -37,6 +37,25 @@ _CSL_RE = re.compile(r"\[%csl\s+([^\]]+)\]")
 _CAL_RE = re.compile(r"\[%cal\s+([^\]]+)\]")
 _COMMAND_RE = re.compile(r"[ \t]*\[%[^\]]*\][ \t]*")
 
+# Course exporters (Chessable and friends) embed app directives in comments as
+# @@StartName@@...@@EndName@@ spans. How a span renders as prose depends only
+# on its name, so supporting another exporter means one entry here, not new
+# parsing: FEN spans are diagram directives (the board already shows the
+# position -- drop them), Bracket spans hold engine evaluations (keep, shown
+# parenthesized as the source app renders them). Unknown spans keep their text,
+# losing only the markers.
+_MARKER_SPAN_RE = re.compile(r"@@Start(\w+)@@(.*?)@@End\1@@", re.DOTALL)
+_MARKER_STRAY_RE = re.compile(r"[ \t]*@@\w+@@[ \t]*")
+_MARKER_SPAN_RENDERERS = {
+    "FEN": lambda text: "",
+    "Bracket": lambda text: f"({text.strip()})",
+}
+
+
+def _replace_marker_span(match: re.Match[str]) -> str:
+    renderer = _MARKER_SPAN_RENDERERS.get(match.group(1), lambda text: text.strip())
+    return renderer(match.group(2))
+
 
 @dataclass(frozen=True, slots=True)
 class ParsedComment:
@@ -64,8 +83,10 @@ def parse_comment(comment: str) -> ParsedComment:
 
 
 def strip_annotation_commands(comment: str) -> str:
-    """Remove every [%...] command, leaving the surrounding text intact."""
-    return _COMMAND_RE.sub(" ", comment).strip()
+    """Remove every [%...] command and @@...@@ exporter marker from the text."""
+    text = _MARKER_SPAN_RE.sub(_replace_marker_span, comment)
+    text = _MARKER_STRAY_RE.sub(" ", text)
+    return _COMMAND_RE.sub(" ", text).strip()
 
 
 def annotations_from_comment(comment: str) -> BoardAnnotations:

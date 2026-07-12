@@ -44,3 +44,29 @@ def test_parse_comment_splits_prose_and_annotations() -> None:
     assert parsed.prose == "Consider the knight on [b7].\n\nIt forks pieces."
     assert parsed.inline_prose == "Consider the knight on [b7]. It forks pieces."
     assert len(parsed.annotations.circles) == 1
+
+
+def test_fen_marker_spans_are_dropped() -> None:
+    comment = "The start @@StartFEN@@rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1@@EndFEN@@ position."
+
+    assert strip_annotation_commands(comment) == "The start  position."
+
+
+def test_bracket_marker_spans_render_parenthesized() -> None:
+    comment = "King is in trouble @@StartBracket@@+7.0@@EndBracket@@. Keep attacking."
+
+    assert strip_annotation_commands(comment) == "King is in trouble (+7.0). Keep attacking."
+
+
+def test_unknown_marker_spans_keep_their_text() -> None:
+    assert strip_annotation_commands("see @@StartNote@@ the plan @@EndNote@@ here") == "see the plan here"
+
+
+def test_stray_markers_are_removed() -> None:
+    assert strip_annotation_commands("before @@Diagram@@ after") == "before after"
+
+
+def test_markers_and_commands_combine() -> None:
+    comment = "eval @@StartBracket@@+2.0@@EndBracket@@ [%cal Ge2e4] push"
+
+    assert strip_annotation_commands(comment) == "eval (+2.0) push"

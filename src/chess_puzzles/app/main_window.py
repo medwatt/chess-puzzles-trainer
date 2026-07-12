@@ -27,6 +27,7 @@ from chess_puzzles.constants import (
     ENGINE_POLL_INTERVAL_MS,
     FLASH_CORRECT_COLOR,
     MAIN_WINDOW_MINSIZE,
+    PREFIX_RECAP_STEP_DELAY_MS,
 )
 from chess_puzzles.board.input import BoardEvent, MoveRequested
 from chess_puzzles.dialogs.choice import ChoiceDialog
@@ -48,13 +49,26 @@ from chess_puzzles.pgn.utils import pgn_for_puzzle
 from chess_puzzles.pgn.viewer import PgnViewer
 from chess_puzzles.puzzle import MoveResult, Puzzle, PuzzleSession, Refutation
 from chess_puzzles.puzzle.grade import grade_solve
+from chess_puzzles.puzzle.prefix import drill_prefix_length
 from chess_puzzles.reports import AttemptSummary, attempt_summary, format_duration_ms
 from chess_puzzles.settings.repository import SettingsRepository
-from chess_puzzles.store import Attempt, ContentDatabase, FavoriteRef, UserStore, now_iso
-from chess_puzzles.settings.theme_repository import UiTheme, available_piece_themes, built_in_board_themes
+from chess_puzzles.store import (
+    DECK_KIND_REPERTOIRE,
+    Attempt,
+    ContentDatabase,
+    FavoriteRef,
+    UserStore,
+    now_iso,
+)
+from chess_puzzles.settings.theme_repository import (
+    UiTheme,
+    available_piece_themes,
+    built_in_board_themes,
+)
 from chess_puzzles.text_utils import display_comment
 from chess_puzzles.ui.theme import ThemeService
 # >>>
+
 
 class MainWindow:
     def __init__(
@@ -92,12 +106,17 @@ class MainWindow:
         self._clean_comments_var = tk.BooleanVar(value=state.settings.clean_comments)
         self._pause_for_comment_var = tk.BooleanVar(value=state.settings.pause_for_comment)
         self._pause_playback_var = tk.BooleanVar(value=state.settings.pause_playback_each_move)
+        self._start_at_divergence_var = tk.BooleanVar(
+            value=state.settings.start_lines_at_divergence
+        )
+        self._demonstrate_var = tk.BooleanVar(value=state.settings.demonstrate_new_lines)
 
         # Sidebar/status text bound to labels
         self._status_var = tk.StringVar(value="Ready")
         self._title_var = tk.StringVar(value="No puzzle loaded")
         self._info_vars: dict[str, tk.StringVar] = {
-            key: tk.StringVar(value="-") for key in ("Puzzle", "Move", "Turn", "Side", "Start", "Theme")
+            key: tk.StringVar(value="-")
+            for key in ("Puzzle", "Move", "Turn", "Side", "Start", "Theme")
         }
         self._session_stats_vars: dict[str, tk.StringVar] = {
             key: tk.StringVar(value="-") for key in ("Attempted", "Solved", "Total", "Average")
@@ -122,6 +141,7 @@ class MainWindow:
         # Session stats count attempts since this anchor; "Reset" moves it to now.
         self._stats_anchor = now_iso()
         self._engaged = False
+        self._line_demonstrated = False
         self._visit_recorded = False
         self._solve_clock_start: float | None = None
 
@@ -131,6 +151,7 @@ class MainWindow:
 
         # Computer-reply scheduling (within the current session)
         self._computer_reply_after_id: str | None = None
+        self._prefix_after_id: str | None = None
         self.waiting_for_continue = False
         self._refutation_playback = RefutationPlayback(self)
         # Post-solve coda: traps the user walked past, offered for review
@@ -224,13 +245,17 @@ class MainWindow:
             self._status_var.set("Position reset")
             return
         self.cancel_computer_reply()
+        self.cancel_prefix_recap()
         self._refutation_playback.cancel()
         # _seen_refutations survives a reset on purpose: a trap already
         # experienced this visit is not re-offered after re-solving.
         self._avoided_traps = []
         self.session.reset()
         self._refresh_from_session("Puzzle reset.")
-        self._schedule_computer_reply()
+        if self.session.in_prefix:
+            self._start_prefix_recap()
+        else:
+            self._schedule_computer_reply()
 
     def close(self) -> None:
         try:
@@ -248,7 +273,11 @@ class MainWindow:
         self._status_var.set("Recent files cleared")
 
     def copy_current_position(self) -> None:
-        fen = self.session.board.fen() if self.session is not None else self._layout.board.state.board.fen()
+        fen = (
+            self.session.board.fen()
+            if self.session is not None
+            else self._layout.board.state.board.fen()
+        )
         self.root.clipboard_clear()
         self.root.clipboard_append(fen)
         self._status_var.set("Current FEN copied")
@@ -309,12 +338,26 @@ class MainWindow:
             clean_comments=bool(self._clean_comments_var.get()),
             pause_for_comment=bool(self._pause_for_comment_var.get()),
             pause_playback_each_move=bool(self._pause_playback_var.get()),
+            start_lines_at_divergence=bool(self._start_at_divergence_var.get()),
+            demonstrate_new_lines=bool(self._demonstrate_var.get()),
         )
+
+    def on_start_at_divergence_changed(self) -> None:
+        self.save_training_preferences()
+        # Re-enter the current line under the new policy right away.
+        if (
+            self.session is not None
+            and self.database is not None
+            and self.database.kind == DECK_KIND_REPERTOIRE
+        ):
+            self.load_current_puzzle()
 
     def on_clean_comments_changed(self) -> None:
         self.save_training_preferences()
         if self.session is not None:
-            self._replace_text(self._layout.comment_view, self._display_comment(self.session.current_comment))
+            self._replace_text(
+                self._layout.comment_view, self._display_comment(self.session.current_comment)
+            )
 
     def on_user_note_changed(self) -> None:
         self._user_notes.on_changed()
@@ -341,7 +384,9 @@ class MainWindow:
 
     def _build_initial_presentation(self) -> BoardPresentation:
         settings = self.state.settings
-        board_theme = self.board_themes.get(settings.board_theme_id, self.board_themes[DEFAULT_BOARD_THEME_ID])
+        board_theme = self.board_themes.get(
+            settings.board_theme_id, self.board_themes[DEFAULT_BOARD_THEME_ID]
+        )
         piece_theme = self._piece_theme_or_default(settings.piece_theme_id)
         return BoardPresentation(
             board_theme=board_theme,
@@ -362,7 +407,9 @@ class MainWindow:
                 tk_font = font.nametofont(name)
             except tk.TclError:
                 continue
-            tk_font.configure(family=settings.font_family, size=settings.font_size, weight=weight, slant=slant)
+            tk_font.configure(
+                family=settings.font_family, size=settings.font_size, weight=weight, slant=slant
+            )
 
     def _handle_board_event(self, event: BoardEvent) -> None:
         if isinstance(event, MoveRequested):
@@ -434,7 +481,9 @@ class MainWindow:
         if not themes:
             messagebox.showinfo("Start theme", "This database has no themes.", parent=self.root)
             return
-        theme = ChoiceDialog(self.root, "Start theme", "Theme:", themes, self.active_theme or themes[0]).show_modal()
+        theme = ChoiceDialog(
+            self.root, "Start theme", "Theme:", themes, self.active_theme or themes[0]
+        ).show_modal()
         if theme is None:
             return
         self.active_theme = theme
@@ -531,7 +580,9 @@ class MainWindow:
     def open_engine_play_window(self) -> None:
         engine = self.engine_config.default_engine
         if engine is None:
-            messagebox.showerror("Play vs Engine", "Configure a default engine first.", parent=self.root)
+            messagebox.showerror(
+                "Play vs Engine", "Configure a default engine first.", parent=self.root
+            )
             return
         if self._engine_play_window is not None and self._engine_play_window.winfo_exists():
             self._engine_play_window.lift()
@@ -577,7 +628,9 @@ class MainWindow:
 
     def _ensure_engine_polling(self) -> None:
         if self._engine_poll_after_id is None:
-            self._engine_poll_after_id = self.root.after(ENGINE_POLL_INTERVAL_MS, self._poll_engine_results)
+            self._engine_poll_after_id = self.root.after(
+                ENGINE_POLL_INTERVAL_MS, self._poll_engine_results
+            )
 
     def _poll_engine_results(self) -> None:
         self._engine_poll_after_id = None
@@ -613,7 +666,9 @@ class MainWindow:
         self._ensure_engine_polling()
 
     def _update_analysis_button_label(self) -> None:
-        running = self.engine_controller.state == EngineState.RUNNING and self._analysis_user_enabled
+        running = (
+            self.engine_controller.state == EngineState.RUNNING and self._analysis_user_enabled
+        )
         icon_name = "analysis_pause.png" if running else "analysis_start.png"
         text = "Pause Analysis" if running else "Start Analysis"
         self._layout.set_toolbar_button_icon(self._layout.toggle_analysis_button, icon_name, text)
@@ -626,6 +681,10 @@ class MainWindow:
         self._user_notes.save_now()
         self._database.open_database(database_path)
 
+    def import_opening_course(self) -> None:
+        self._user_notes.save_now()
+        self._database.import_opening_course()
+
     def import_lichess_csv(self) -> None:
         self._user_notes.save_now()
         self._database.import_lichess_csv()
@@ -636,16 +695,24 @@ class MainWindow:
 
     def load_current_puzzle(self) -> None:
         self._finalize_visit()
-        if self.database is None or self.current_index < 0 or self.current_index >= self.database.count():
+        if (
+            self.database is None
+            or self.current_index < 0
+            or self.current_index >= self.database.count()
+        ):
             return
         puzzle = self.database.puzzle_at(self.current_index)
         player_color = self._player_color_for_puzzle(puzzle)
-        self.session = PuzzleSession(puzzle, player_color)
+        self.cancel_prefix_recap()
+        self.session = PuzzleSession(
+            puzzle, player_color, prefix_length=self._drill_prefix_for(puzzle)
+        )
         self._refutation_playback.cancel()
         self._avoided_traps = []
         self._seen_refutations = set()
         self.waiting_for_continue = False
         self._engaged = False
+        self._line_demonstrated = False
         self._visit_recorded = False
         self._solve_clock_start = None
         self.user_store.set_ui(f"last_puzzle:{self.database.database_id}", puzzle.puzzle_id)
@@ -660,9 +727,15 @@ class MainWindow:
             self.engine_controller.pause()
         self._refresh_from_session(self._opening_status())
         self._user_notes.load_current()
-        if not self.session.is_complete and self.session.board.turn != self.session.player_color:
+        if self.session.in_prefix:
+            self._start_prefix_recap()
+        elif self._should_demonstrate():
+            self._start_line_demonstration()
+        elif not self.session.is_complete and self.session.board.turn != self.session.player_color:
             self.cancel_computer_reply()
-            self._computer_reply_after_id = self.root.after(COMPUTER_REPLY_DELAY_MS, self._play_computer_reply)
+            self._computer_reply_after_id = self.root.after(
+                COMPUTER_REPLY_DELAY_MS, self._play_computer_reply
+            )
         else:
             self._maybe_start_solve_clock()
 
@@ -703,7 +776,11 @@ class MainWindow:
 
     def on_move_requested(self, move: chess.Move, *, animate: bool = True) -> None:
         if self._refutation_playback.active:
-            self._status_var.set("Watching the refutation - press m to continue.")
+            self._status_var.set(
+                "Watching the line - press m to continue."
+                if self._refutation_playback.is_lesson
+                else "Watching the refutation - press m to continue."
+            )
             return
         if self.session is None:
             board = self._layout.board.state.board.copy(stack=False)
@@ -904,15 +981,120 @@ class MainWindow:
             return
         self._maybe_auto_next()
 
+    def _drill_prefix_for(self, puzzle: Puzzle) -> int:
+        """Recap length for repertoire decks: where this line joins the previous one."""
+        if self.database is None or self.database.kind != DECK_KIND_REPERTOIRE:
+            return 0
+        if not self._start_at_divergence_var.get() or self.current_index <= 0:
+            return 0
+        return drill_prefix_length(self.database.puzzle_at(self.current_index - 1), puzzle)
+
+    def _start_prefix_recap(self) -> None:
+        """Fast-forward the moves shared with the previous line, animated.
+
+        The recap advances the real session (unlike refutation playback's
+        scratch board): these are the line's own moves, just not graded.
+        Board input during the recap is answered with WAITING by the session."""
+        self.cancel_computer_reply()
+        self.cancel_prefix_recap()
+        self._status_var.set("Recap - watch the line join.")
+        self._prefix_after_id = self.root.after(COMPUTER_REPLY_DELAY_MS, self._play_prefix_step)
+
+    def cancel_prefix_recap(self) -> None:
+        if self._prefix_after_id is not None:
+            self.root.after_cancel(self._prefix_after_id)
+            self._prefix_after_id = None
+
+    def _play_prefix_step(self) -> None:
+        self._prefix_after_id = None
+        if self.session is None or not self.session.in_prefix:
+            return
+        board_before = self.session.board.copy(stack=False)
+        move = self.session.play_prefix_move()
+        if move is None:
+            return
+        self.audio.play_move(board_before, move, self.session.board)
+        if self.session.in_prefix:
+            self._refresh_from_session("Recap - watch the line join.", move)
+            self._prefix_after_id = self.root.after(
+                PREFIX_RECAP_STEP_DELAY_MS, self._play_prefix_step
+            )
+            return
+        # Divergence point reached: demonstrate a first-encounter line, or
+        # hand over to the normal solving flow.
+        if self._should_demonstrate():
+            self._refresh_from_session("Recap done - now watch the new moves.", move)
+            # One step of breathing room: starting the lesson in the same tick
+            # would land its first move (sound and animation) on top of the
+            # recap move that just played.
+            self._prefix_after_id = self.root.after(
+                PREFIX_RECAP_STEP_DELAY_MS, self._start_line_demonstration
+            )
+        elif not self.session.is_complete and self.session.board.turn != self.session.player_color:
+            self._refresh_from_session("Recap done.", move)
+            self._schedule_computer_reply()
+        else:
+            self._refresh_from_session("The line continues here - your move.", move)
+            self._maybe_start_solve_clock()
+
+    def _should_demonstrate(self) -> bool:
+        """A never-attempted repertoire line is demonstrated before the quiz.
+
+        Recall within moments of first exposure is what commits a line to
+        memory; browsing past a line does not count as knowing it (only
+        engaged visits record attempts), and one demonstration per visit is
+        enough -- a reset goes straight to the retry.
+        """
+        if self.session is None or self.session.is_complete or self._line_demonstrated:
+            return False
+        if self.database is None or self.database.kind != DECK_KIND_REPERTOIRE:
+            return False
+        if not self._demonstrate_var.get():
+            return False
+        return not self.user_store.has_solved(self.session.puzzle.puzzle_id)
+
+    def _start_line_demonstration(self) -> None:
+        """Play the not-yet-drilled part of the line as a lesson.
+
+        The session stays at the quiz point (the lesson runs on a scratch
+        board); comments[i + 1] annotates moves[i], matching the mainline
+        convention."""
+        session = self.session
+        assert session is not None
+        self._line_demonstrated = True
+        start = session.move_index
+        moves = list(session.puzzle.moves[start:])
+        comments = [
+            session.puzzle.comments[index] if index < len(session.puzzle.comments) else ""
+            for index in range(start + 1, start + 1 + len(moves))
+        ]
+        self._refutation_playback.start_lesson(moves, comments)
+
+    def _resume_after_lesson(self) -> None:
+        """Quiz the line just shown: the lesson rewound to the quiz point."""
+        if self.session is None or self.session.is_complete:
+            return
+        if self.session.board.turn != self.session.player_color:
+            self._schedule_computer_reply()
+            return
+        self._status_var.set("Your turn - play the line from here.")
+        self._maybe_start_solve_clock()
+
     def _schedule_computer_reply(self) -> None:
         self.cancel_computer_reply()
-        if self.session is None or self.session.is_complete or self.session.board.turn == self.session.player_color:
+        if (
+            self.session is None
+            or self.session.is_complete
+            or self.session.board.turn == self.session.player_color
+        ):
             return
         if self._pause_for_comment_var.get() and self.session.current_comment.strip():
             self.waiting_for_continue = True
             self._status_var.set("Correct: press m to continue.")
             return
-        self._computer_reply_after_id = self.root.after(COMPUTER_REPLY_DELAY_MS, self._play_computer_reply)
+        self._computer_reply_after_id = self.root.after(
+            COMPUTER_REPLY_DELAY_MS, self._play_computer_reply
+        )
 
     def cancel_computer_reply(self) -> None:
         if self._computer_reply_after_id is not None:
@@ -955,7 +1137,9 @@ class MainWindow:
         self._title_var.set(self.session.puzzle.title)
         self._update_puzzle_info()
         if hasattr(self._layout, "comment_view"):
-            self._replace_text(self._layout.comment_view, self._display_comment(self.session.current_comment))
+            self._replace_text(
+                self._layout.comment_view, self._display_comment(self.session.current_comment)
+            )
         self._status_var.set(status)
 
     def _player_color_for_puzzle(self, puzzle: Puzzle) -> chess.Color:
@@ -966,6 +1150,8 @@ class MainWindow:
     def _opening_status(self) -> str:
         if self.session is None:
             return ""
+        if self.session.in_prefix:
+            return "Recap - watch the line join."
         if self.session.puzzle.skip_first_move and self.session.expected_move is not None:
             return "Computer will play the first move."
         return "Play the first move."
@@ -988,7 +1174,11 @@ class MainWindow:
         info["Side"].set("White" if session.player_color == chess.WHITE else "Black")
         info["Start"].set("Computer first" if puzzle.skip_first_move else "You first")
         if puzzle.theme:
-            theme_progress = self.database.theme_position(self.current_index) if self.database is not None else None
+            theme_progress = (
+                self.database.theme_position(self.current_index)
+                if self.database is not None
+                else None
+            )
             if theme_progress is not None:
                 position, theme_total = theme_progress
                 info["Theme"].set(f"{puzzle.theme} [{position}/{theme_total}]")
@@ -1141,13 +1331,19 @@ class MainWindow:
             return False
         if self.review_view:
             source = self._current_favorite_source()
-            return source is not None and self.user_store.is_favorite(source.puzzle_id, source.database_id)
+            return source is not None and self.user_store.is_favorite(
+                source.puzzle_id, source.database_id
+            )
         if self.favorites_view:
             return self._current_favorite_source() is not None
         return self.user_store.is_favorite(self.session.puzzle.puzzle_id, self.database.database_id)
 
     def _current_favorite_source(self) -> FavoriteRef | None:
-        if not self.favorites_view or self.current_index < 0 or self.current_index >= len(self.favorite_sources):
+        if (
+            not self.favorites_view
+            or self.current_index < 0
+            or self.current_index >= len(self.favorite_sources)
+        ):
             return None
         return self.favorite_sources[self.current_index]
 
@@ -1174,8 +1370,14 @@ class MainWindow:
     def view_all_favorites(self) -> None:
         self._database.view_favorites(scope="all")
 
-    def review_mistakes(self) -> None:
-        self._database.review_mistakes()
+    def review_mistakes_this_deck(self) -> None:
+        self._database.review_mistakes(scope="deck")
+
+    def review_all_mistakes(self) -> None:
+        self._database.review_mistakes(scope="all")
+
+    def reset_deck_userdata(self) -> None:
+        self._database.reset_deck_userdata()
 
     def export_favorites_this_deck(self) -> None:
         self._database.export_favorites(scope="deck")

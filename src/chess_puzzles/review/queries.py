@@ -25,8 +25,20 @@ class DueReview:
     database_path: str
 
 
-def due_reviews(conn: sqlite3.Connection, *, now: datetime | None = None) -> list[DueReview]:
-    """Puzzles due for review at ``now``, most overdue first."""
+def due_reviews(
+    conn: sqlite3.Connection,
+    *,
+    now: datetime | None = None,
+    database_id: str | None = None,
+) -> list[DueReview]:
+    """Puzzles due for review at ``now``, most overdue first.
+
+    ``database_id`` scopes the queue to one deck (reviewing an opening course
+    should not mix in tactics from elsewhere). Items with an empty locator --
+    attempts predating the locator columns -- are kept in a scoped queue too:
+    they are only ever resolvable against the currently open deck, which is
+    exactly the deck being scoped to.
+    """
     now = now or datetime.now(UTC)
     rows = conn.execute(
         "SELECT puzzle_id, at, grade, duration_ms, database_id, database_path"
@@ -35,14 +47,16 @@ def due_reviews(conn: sqlite3.Connection, *, now: datetime | None = None) -> lis
     due: list[DueReview] = []
     for puzzle_id, group in groupby(rows, key=lambda row: row["puzzle_id"]):
         history: list[Rep] = []
-        database_id = database_path = ""
+        locator_id = locator_path = ""
         for row in group:
             history.append(Rep(_parse_at(row["at"]), row["grade"], row["duration_ms"]))
             if row["database_path"]:
-                database_id, database_path = row["database_id"], row["database_path"]
+                locator_id, locator_path = row["database_id"], row["database_path"]
         when = next_due(history)
         if when is not None and when <= now:
-            due.append(DueReview(puzzle_id, when, database_id, database_path))
+            due.append(DueReview(puzzle_id, when, locator_id, locator_path))
+    if database_id is not None:
+        due = [review for review in due if review.database_id in ("", database_id)]
     due.sort(key=lambda review: review.due)
     return due
 
