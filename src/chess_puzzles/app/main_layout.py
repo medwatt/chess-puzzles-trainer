@@ -60,7 +60,7 @@ class MainLayoutBuilder:
         self._build_navigation(shell)
         self._build_sidebar(shell)
         self._build_status_bar()
-        self._build_welcome_panel(board_outer)
+        self._build_welcome_panel(shell)
 
         # Board-level keyboard shortcuts (arrow keys, etc.)
         BoardShortcuts(window.root, self.board).bind()
@@ -68,6 +68,7 @@ class MainLayoutBuilder:
     def _build_navigation(self, shell: ttk.Frame) -> None:
         window = self.window
         navigation = ttk.LabelFrame(shell, text="Puzzle Controls")
+        self.navigation = navigation
         navigation.grid(row=1, column=0, sticky="ew", padx=(0, 8))
         navigation_buttons = ttk.Frame(navigation)
         navigation_buttons.pack(anchor=tk.CENTER, pady=2)
@@ -258,33 +259,40 @@ class MainLayoutBuilder:
         else:
             self._session_stats_frame.grid_remove()
 
-    def _build_welcome_panel(self, board_outer: ttk.Frame) -> None:
+    def _build_welcome_panel(self, shell: ttk.Frame) -> None:
         window = self.window
-        self.welcome_frame = ttk.Frame(board_outer, padding=24)
+        self.welcome_frame = ttk.Frame(shell, padding=24)
         ttk.Label(self.welcome_frame, text="Chess Puzzles Trainer", font=("TkDefaultFont", 14, "bold")).pack(
             pady=(0, 4)
         )
-        ttk.Label(self.welcome_frame, text="Load a puzzle database to start training.").pack(pady=(0, 14))
-        actions = (
-            ("Open Database...", window.open_database),
-            ("New from PGN...", window.create_database_from_pgn),
-            ("Import Lichess CSV...", window.import_lichess_csv),
+        ttk.Label(self.welcome_frame, text="Choose a course to start training.").pack(pady=(0, 14))
+        primary_actions = (
+            ("Course Library...", window.open_course_library),
+            ("Open Course File...", window.open_database),
+            ("Add Course...", window.add_course),
         )
-        for text, command in actions:
+        for text, command in primary_actions:
             ttk.Button(
                 self.welcome_frame,
                 text=text,
                 command=self._with_board_focus(command),
                 takefocus=False,
             ).pack(fill=tk.X, pady=2)
-        ttk.Label(self.welcome_frame, text="Recent databases: File > Open Recent").pack(pady=(14, 0))
         self.set_welcome_visible(True)
 
     def set_welcome_visible(self, visible: bool) -> None:
         if visible:
+            self.board_frame.grid_remove()
+            self.sidebar.grid_remove()
+            self.navigation.grid_remove()
+            self.set_session_stats_visible(False)
             self.welcome_frame.place(relx=0.5, rely=0.5, anchor=tk.CENTER)
         else:
             self.welcome_frame.place_forget()
+            self.board_frame.grid()
+            self.sidebar.grid()
+            self.navigation.grid()
+            self.set_session_stats_visible(self.window._show_session_stats_var.get())
 
     def _build_training_tools(self, practice_row: ttk.Frame) -> None:
         window = self.window

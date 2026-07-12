@@ -142,7 +142,7 @@ def test_truly_identical_puzzles_are_still_kept(tmp_path: Path) -> None:
 
 
 def test_create_replaces_existing_file(tmp_path: Path) -> None:
-    # Re-creating at the same path (e.g. "New from PGN" saved over an existing
+    # Re-creating at the same path (e.g. a PGN import saved over an existing
     # deck) replaces it instead of appending and colliding on primary keys.
     path = tmp_path / "deck.cpdb"
     ContentDatabase.create(path, _meta(), _sample_puzzles()).close()

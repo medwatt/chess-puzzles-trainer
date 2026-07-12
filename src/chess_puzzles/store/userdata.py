@@ -6,7 +6,13 @@ from pathlib import Path
 
 from chess_puzzles.platform.paths import user_data_dir
 from chess_puzzles.store.clock import now_iso
-from chess_puzzles.store.sql import ATTEMPT_LOCATOR_SQL, USER_SCHEMA_SQL, VISION_SCHEMA_SQL
+from chess_puzzles.store.library import CourseLibrary
+from chess_puzzles.store.sql import (
+    ATTEMPT_LOCATOR_SQL,
+    LIBRARY_SCHEMA_SQL,
+    USER_SCHEMA_SQL,
+    VISION_SCHEMA_SQL,
+)
 
 # Migration N (index N) upgrades the database from user_version N to N+1. A fresh
 # file is at version 0, so migration 0 creates the current schema. To change the
@@ -15,6 +21,7 @@ _USER_MIGRATIONS: tuple[str, ...] = (
     USER_SCHEMA_SQL,
     VISION_SCHEMA_SQL,
     ATTEMPT_LOCATOR_SQL,
+    LIBRARY_SCHEMA_SQL,
 )
 
 
@@ -64,6 +71,13 @@ class VisionAttempt:
     elapsed_ms: int
 
 
+@dataclass(frozen=True, slots=True)
+class VisionHistory:
+    drill_id: str
+    attempts: int
+    last_at: str
+
+
 class UserStore:
     def __init__(self, conn: sqlite3.Connection) -> None:
         self._conn = conn
@@ -71,6 +85,10 @@ class UserStore:
     @property
     def connection(self) -> sqlite3.Connection:
         return self._conn
+
+    @property
+    def library(self) -> CourseLibrary:
+        return CourseLibrary(self._conn)
 
     @classmethod
     def open_default(cls) -> "UserStore":
@@ -153,34 +171,76 @@ class UserStore:
             "SELECT COUNT(*) FROM attempt WHERE database_id = ?", (database_id,)
         ).fetchone()[0]
 
-    def delete_deck_attempts(self, database_id: str) -> int:
-        with self._conn:
-            cursor = self._conn.execute("DELETE FROM attempt WHERE database_id = ?", (database_id,))
-        return cursor.rowcount
-
     def deck_favorite_count(self, database_id: str) -> int:
         return self._conn.execute(
             "SELECT COUNT(*) FROM favorite WHERE database_id = ?", (database_id,)
         ).fetchone()[0]
 
-    def delete_deck_favorites(self, database_id: str) -> int:
+    def vision_histories(self) -> list[VisionHistory]:
+        rows = self._conn.execute(
+            "SELECT drill_id, COUNT(*) AS attempts, MAX(at) AS last_at"
+            " FROM vision_attempt GROUP BY drill_id ORDER BY last_at DESC, drill_id"
+        )
+        return [VisionHistory(row["drill_id"], row["attempts"], row["last_at"]) for row in rows]
+
+    def delete_vision_attempts(self, drill_ids: set[str] | None = None) -> int:
         with self._conn:
-            cursor = self._conn.execute(
-                "DELETE FROM favorite WHERE database_id = ?", (database_id,)
-            )
+            if drill_ids is None:
+                cursor = self._conn.execute("DELETE FROM vision_attempt")
+            elif not drill_ids:
+                return 0
+            else:
+                placeholders = ",".join("?" for _ in drill_ids)
+                cursor = self._conn.execute(
+                    f"DELETE FROM vision_attempt WHERE drill_id IN ({placeholders})",
+                    tuple(drill_ids),
+                )
         return cursor.rowcount
 
-    def vision_attempt_count(self) -> int:
-        return self._conn.execute("SELECT COUNT(*) FROM vision_attempt").fetchone()[0]
-
-    def delete_vision_attempts(self) -> int:
+    def delete_deck_data(
+        self,
+        database_id: str,
+        *,
+        attempts: bool,
+        favorites: bool,
+        position: bool,
+    ) -> dict[str, int]:
+        deleted = {"attempts": 0, "favorites": 0, "position": 0}
         with self._conn:
-            cursor = self._conn.execute("DELETE FROM vision_attempt")
-        return cursor.rowcount
+            if attempts:
+                deleted["attempts"] = self._conn.execute(
+                    "DELETE FROM attempt WHERE database_id = ?", (database_id,)
+                ).rowcount
+            if favorites:
+                deleted["favorites"] = self._conn.execute(
+                    "DELETE FROM favorite WHERE database_id = ?", (database_id,)
+                ).rowcount
+            if position:
+                deleted["position"] = self._conn.execute(
+                    "DELETE FROM ui_state WHERE key = ?", (f"last_puzzle:{database_id}",)
+                ).rowcount
+        return deleted
 
-    def delete_ui(self, key: str) -> None:
+    def delete_all_training_data(self) -> dict[str, int]:
+        """Delete user-created history while preserving application preferences."""
+        deleted: dict[str, int] = {}
         with self._conn:
-            self._conn.execute("DELETE FROM ui_state WHERE key = ?", (key,))
+            for name, table in (
+                ("attempts", "attempt"),
+                ("favorites", "favorite"),
+                ("notes", "note"),
+                ("vision", "vision_attempt"),
+            ):
+                deleted[name] = self._conn.execute(f"DELETE FROM {table}").rowcount
+            deleted["course_tags"] = self._conn.execute(
+                "DELETE FROM library_course_tag"
+            ).rowcount
+            deleted["tags"] = self._conn.execute("DELETE FROM library_tag").rowcount
+            self._conn.execute("UPDATE library_course SET pinned=0, status='active'")
+            deleted["positions"] = self._conn.execute(
+                "DELETE FROM ui_state WHERE key LIKE 'last_puzzle:%'"
+            ).rowcount
+        return deleted
 
     def get_note(self, puzzle_id: str) -> str:
         row = self._conn.execute(

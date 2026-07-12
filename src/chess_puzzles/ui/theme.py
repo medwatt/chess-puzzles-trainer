@@ -75,6 +75,43 @@ class ThemeService:
         self._style.configure("Muted.TLabel", background=theme.window_bg, foreground=theme.muted_text)
         self._style.configure("MutedPanel.TLabel", background=theme.panel_bg, foreground=theme.muted_text)
         self._style.configure(
+            "TNotebook",
+            background=theme.window_bg,
+            bordercolor=theme.border,
+            darkcolor=theme.border,
+            lightcolor=theme.border,
+            tabmargins=(0, 0, 0, 0),
+        )
+        self._style.configure(
+            "TNotebook.Tab",
+            background=theme.button_bg,
+            foreground=theme.text,
+            bordercolor=theme.border,
+            darkcolor=theme.border,
+            lightcolor=theme.border,
+            padding=(10, 6),
+        )
+        self._style.map(
+            "TNotebook.Tab",
+            background=[
+                ("selected", theme.window_bg),
+                ("active", theme.button_active),
+            ],
+            foreground=[("selected", theme.text), ("disabled", theme.muted_text)],
+        )
+        self._style.configure(
+            "TLabelframe",
+            background=theme.window_bg,
+            bordercolor=theme.border,
+            darkcolor=theme.border,
+            lightcolor=theme.border,
+        )
+        self._style.configure(
+            "TLabelframe.Label",
+            background=theme.window_bg,
+            foreground=theme.text,
+        )
+        self._style.configure(
             "TButton",
             background=theme.button_bg,
             foreground=theme.text,

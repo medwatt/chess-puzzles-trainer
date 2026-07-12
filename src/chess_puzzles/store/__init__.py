@@ -8,17 +8,22 @@ from chess_puzzles.store.content import (
     ContentMeta,
 )
 from chess_puzzles.store.identity import puzzle_fingerprint
-from chess_puzzles.store.userdata import Attempt, FavoriteRef, UserStore, VisionAttempt
+from chess_puzzles.store.library import CourseLibrary, LibraryCourse, ScanResult
+from chess_puzzles.store.userdata import Attempt, FavoriteRef, UserStore, VisionAttempt, VisionHistory
 
 __all__ = [
     "Attempt",
     "ContentDatabase",
     "ContentMeta",
+    "CourseLibrary",
     "DECK_KIND_REPERTOIRE",
     "DECK_KIND_TACTICS",
     "FavoriteRef",
+    "LibraryCourse",
+    "ScanResult",
     "UserStore",
     "VisionAttempt",
+    "VisionHistory",
     "now_iso",
     "puzzle_fingerprint",
 ]

@@ -10,12 +10,13 @@ import chess
 
 from chess_puzzles.database.manager import DatabaseManagerDialog
 from chess_puzzles.dialogs.choice import ChoiceDialog
+from chess_puzzles.dialogs.course_library import CourseLibraryDialog
 from chess_puzzles.engine.config import load_engine_config
 from chess_puzzles.mining import MiningCriteria, mined_to_puzzles, save_mining_settings
 from chess_puzzles.mining.dialog import BlunderMineDialog
 from chess_puzzles.mining.runner import MiningRunDialog
 from chess_puzzles.dialogs.repertoire_import import RepertoireImportDialog
-from chess_puzzles.dialogs.reset_userdata import ResetUserdataDialog
+from chess_puzzles.dialogs.reset_userdata import UserDataManagerDialog
 from chess_puzzles.pgn.exporter import export_puzzles_to_pgn
 from chess_puzzles.pgn.repertoire import profile_pgn_file
 from chess_puzzles.puzzle import Puzzle
@@ -41,7 +42,7 @@ if TYPE_CHECKING:
 
 
 DATABASE_FILETYPES = (
-    ("Puzzle databases", "*.cpdb"),
+    ("Course files", "*.cpdb"),
     ("All files", "*.*"),
 )
 
@@ -53,6 +54,25 @@ class MainDatabaseActions:
     def _database_initialdir(self) -> str:
         return self.window.state.settings.default_database_directory or str(Path.home())
 
+    def add_course(self) -> None:
+        choices = (
+            "Tactics course from PGN",
+            "Opening course from PGN",
+            "Lichess puzzles from CSV",
+            "Generated blunder course",
+        )
+        choice = ChoiceDialog(
+            self.window.root, "Add Course", "Course source:", list(choices), default=choices[0]
+        ).show_modal()
+        actions = {
+            choices[0]: self.create_database_from_pgn,
+            choices[1]: self.import_opening_course,
+            choices[2]: self.import_lichess_csv,
+            choices[3]: self.generate_blunder_puzzles,
+        }
+        if choice is not None:
+            actions[choice]()
+
     @staticmethod
     def _puzzle_has_branches(puzzle: Puzzle) -> bool:
         tree = MoveTree.from_pgn_text(puzzle.pgn_text, puzzle.initial_fen)
@@ -61,12 +81,12 @@ class MainDatabaseActions:
     def edit_current_database(self) -> None:
         window = self.window
         if window.favorites_view:
-            window._status_var.set("Open a deck to edit it (the favorites view is read-only).")
+            window._status_var.set("Open a course to edit it (the favorites view is read-only).")
             return
         if window.database is None:
             selected = filedialog.askopenfilename(
                 parent=window.root,
-                title="Load database for editing",
+                title="Open course for editing",
                 initialdir=self._database_initialdir(),
                 filetypes=DATABASE_FILETYPES,
             )
@@ -75,7 +95,7 @@ class MainDatabaseActions:
             try:
                 window.database = ContentDatabase.open(selected)
             except Exception as exc:
-                messagebox.showerror("Could not load database", str(exc), parent=window.root)
+                messagebox.showerror("Could not open course", str(exc), parent=window.root)
                 return
             window.database_path = Path(selected)
         # The dialog writes its edits straight through to the database, so on
@@ -83,17 +103,17 @@ class MainDatabaseActions:
         if DatabaseManagerDialog(window.root, window.database).show_modal():
             window.root.title(f"Chess Puzzles Trainer - {window.database.meta.name}")
             if window.database.count() == 0:
-                self.show_empty_state("Database is empty.")
+                self.show_empty_state("Course is empty.")
                 return
             window.current_index = min(max(window.current_index, 0), window.database.count() - 1)
             window.load_current_puzzle()
-            window._status_var.set("Database saved.")
+            window._status_var.set("Course saved.")
 
     def create_database_from_pgn(self) -> None:
         window = self.window
         path = filedialog.askopenfilename(
             parent=window.root,
-            title="Create database from PGN",
+            title="Create tactics course from PGN",
             initialdir=self._database_initialdir(),
             filetypes=(("PGN files", "*.pgn"), ("All files", "*.*")),
         )
@@ -148,7 +168,7 @@ class MainDatabaseActions:
         if database is None:
             return
         self._use_database(database, Path(save_path))
-        window._status_var.set(f"Created database with {len(puzzles)} puzzle(s).")
+        window._status_var.set(f"Created course with {len(puzzles)} puzzle(s).")
 
     def import_opening_course(self) -> None:
         """Create a repertoire deck from a course PGN, one puzzle per line.
@@ -225,7 +245,7 @@ class MainDatabaseActions:
         if path is None:
             selected = filedialog.askopenfilename(
                 parent=window.root,
-                title="Open puzzle database",
+                title="Open course file",
                 initialdir=self._database_initialdir(),
                 filetypes=DATABASE_FILETYPES,
             )
@@ -235,9 +255,43 @@ class MainDatabaseActions:
         try:
             database = ContentDatabase.open(path)
         except Exception as exc:
-            messagebox.showerror("Could not open database", str(exc), parent=window.root)
+            messagebox.showerror("Could not open course", str(exc), parent=window.root)
             return
         self._use_database(database, path)
+
+    def open_most_recent_course(self) -> None:
+        window = self.window
+        library = window.user_store.library
+        for stored_path in window.state.settings.recent_database_paths:
+            path = library.relocate_known_path(stored_path) or Path(stored_path)
+            if not path.is_file():
+                continue
+            if window.database_path is not None and path.resolve() == window.database_path.resolve():
+                window._status_var.set("The most recent course is already open.")
+                return
+            self.open_database(path)
+            return
+        window._status_var.set("No recent course is available.")
+
+    def open_course_library(self) -> None:
+        window = self.window
+        library = window.user_store.library
+        configured = window.state.settings.default_database_directory
+        if not configured:
+            messagebox.showinfo(
+                "Course Library folder",
+                "Choose your database folder in Settings > Folders before opening the Course Library.",
+                parent=window.root,
+            )
+            window.configure_folders()
+            configured = window.state.settings.default_database_directory
+            if not configured:
+                return
+        if configured:
+            library.set_root(configured)
+        path = CourseLibraryDialog(window.root, library, window.user_store.connection).show()
+        if path is not None:
+            self.open_database(path)
 
     def generate_blunder_puzzles(self) -> None:
         window = self.window
@@ -339,7 +393,7 @@ class MainDatabaseActions:
     def _ask_save_path(self, initialfile: str) -> str:
         return filedialog.asksaveasfilename(
             parent=self.window.root,
-            title="Save puzzle database",
+            title="Save course file",
             initialdir=self._database_initialdir(),
             initialfile=initialfile,
             defaultextension=".cpdb",
@@ -360,10 +414,11 @@ class MainDatabaseActions:
         try:
             return ContentDatabase.create(save_path, meta, puzzles)
         except Exception as exc:
-            messagebox.showerror("Could not save database", str(exc), parent=window.root)
+            messagebox.showerror("Could not save course", str(exc), parent=window.root)
             return None
 
     def _use_database(self, database: ContentDatabase, path: Path) -> None:
+        self.window.user_store.library.register(path, database)
         self.window.user_store.update_favorite_database_path(database.database_id, str(path))
         self._activate_database(
             database,
@@ -371,7 +426,7 @@ class MainDatabaseActions:
             favorites_view=False,
             start_index=self._resume_index(database),
             title=database.meta.name,
-            empty_status="Database is empty.",
+            empty_status="Course is empty.",
         )
         self._remember_recent_database(path)
         self._announce_due_reviews(database)
@@ -383,7 +438,7 @@ class MainDatabaseActions:
         due = due_reviews(self.window.user_store.connection, database_id=database.database_id)
         if due:
             self.window._status_var.set(
-                f"{len(due)} line(s) due for review — Favorites > Review mistakes (this deck)."
+                f"{len(due)} line(s) due for review — Training > Review mistakes (this deck)."
             )
 
     def _activate_database(
@@ -493,8 +548,11 @@ class MainDatabaseActions:
     def _all_favorites(self):
         favorites = []
         by_path: dict[Path, list[FavoriteRef]] = {}
+        library = self.window.user_store.library
         for ref in self.window.user_store.favorite_refs():
-            by_path.setdefault(Path(ref.database_path), []).append(ref)
+            path = library.resolve_path(ref.database_id, ref.database_path)
+            if path is not None:
+                by_path.setdefault(path, []).append(ref)
         for path, refs in by_path.items():
             if not path.exists():
                 continue
@@ -507,7 +565,9 @@ class MainDatabaseActions:
                 for ref in refs_for_db:
                     puzzle = db.puzzle_by_id(ref.puzzle_id)
                     if puzzle is not None:
-                        favorites.append((puzzle, ref))
+                        favorites.append(
+                            (puzzle, FavoriteRef(ref.puzzle_id, ref.database_id, str(path)))
+                        )
             finally:
                 db.close()
         return favorites
@@ -544,9 +604,11 @@ class MainDatabaseActions:
         window = self.window
         resolved = []
         by_path: dict[Path, list[tuple[int, DueReview]]] = {}
+        library = window.user_store.library
         for order, item in enumerate(due):
-            if item.database_path:
-                by_path.setdefault(Path(item.database_path), []).append((order, item))
+            path = library.resolve_path(item.database_id, item.database_path)
+            if path is not None:
+                by_path.setdefault(path, []).append((order, item))
             elif window.database is not None and not window.favorites_view:
                 puzzle = window.database.puzzle_by_id(item.puzzle_id)
                 if puzzle is not None:
@@ -571,7 +633,7 @@ class MainDatabaseActions:
                             (
                                 order,
                                 puzzle,
-                                FavoriteRef(item.puzzle_id, item.database_id, item.database_path),
+                                FavoriteRef(item.puzzle_id, item.database_id, str(path)),
                             )
                         )
             finally:
@@ -596,38 +658,23 @@ class MainDatabaseActions:
             empty_status="No favorites.",
         )
 
-    def reset_deck_userdata(self) -> None:
-        """Wipe the user's own records for the open deck (never its content).
-
-        Reloads the current puzzle afterwards, so a reset course immediately
-        behaves like day one -- first-encounter demonstrations included."""
+    def manage_userdata(self) -> None:
+        """Open scoped training-data management without touching deck content."""
         window = self.window
-        if window.database is None or window.favorites_view:
-            window._status_var.set("Open a deck to reset its user data.")
-            return
-        store = window.user_store
-        database_id = window.database.database_id
-        choices = ResetUserdataDialog(
+        has_deck = window.database is not None and not window.favorites_view
+        database_id = window.database.database_id if has_deck else None
+        deck_name = window.database.meta.name if has_deck else ""
+        changed = UserDataManagerDialog(
             window.root,
-            window.database.meta.name,
-            attempt_count=store.deck_attempt_count(database_id),
-            favorite_count=store.deck_favorite_count(database_id),
-            vision_count=store.vision_attempt_count(),
-        ).show_modal()
-        if choices is None:
-            return
-        deleted: list[str] = []
-        if choices.attempts:
-            deleted.append(f"{store.delete_deck_attempts(database_id)} attempt(s)")
-        if choices.favorites:
-            deleted.append(f"{store.delete_deck_favorites(database_id)} favorite(s)")
-        if choices.position:
-            store.delete_ui(f"last_puzzle:{database_id}")
-            deleted.append("resume point")
-        if choices.vision:
-            deleted.append(f"{store.delete_vision_attempts()} vision drill(s)")
-        window.load_current_puzzle()
-        window._status_var.set(f"Deleted: {', '.join(deleted)}.")
+            window.user_store,
+            database_id=database_id,
+            deck_name=deck_name,
+        ).show()
+        if changed:
+            if has_deck:
+                window.load_current_puzzle()
+            window._refresh_session_stats()
+            window._status_var.set("User data updated.")
 
     def delete_current_puzzle(self) -> None:
         window = self.window

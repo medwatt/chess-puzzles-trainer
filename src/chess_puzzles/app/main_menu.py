@@ -18,9 +18,14 @@ class MainMenuBuilder:
         # File menu
         self._file_menu = tk.Menu(menu_bar, tearoff=False)
         self._file_menu.add_command(
-            label="Open database...",
+            label="Open Course File...",
             accelerator=MENU_ACCELERATORS[MainShortcuts.OPEN_DATABASE],
             command=window.open_database,
+        )
+        self._file_menu.add_command(
+            label="Course Library...",
+            accelerator=MENU_ACCELERATORS[MainShortcuts.COURSE_LIBRARY],
+            command=window.open_course_library,
         )
         self._recent_menu = tk.Menu(self._file_menu, tearoff=False)
         self._file_menu.add_cascade(label="Open Recent", menu=self._recent_menu)
@@ -34,11 +39,16 @@ class MainMenuBuilder:
         )
         menu_bar.add_cascade(label="File", menu=self._file_menu)
 
-        # Database menu
+        # Course menu
         database_menu = tk.Menu(menu_bar, tearoff=False)
         database_menu.add_command(
-            label="New from PGN...",
-            accelerator=MENU_ACCELERATORS[MainShortcuts.NEW_DATABASE_FROM_PGN],
+            label="Add Course...",
+            accelerator=MENU_ACCELERATORS[MainShortcuts.ADD_COURSE],
+            command=window.add_course,
+        )
+        database_menu.add_separator()
+        database_menu.add_command(
+            label="Create tactics course from PGN...",
             command=window.create_database_from_pgn,
         )
         database_menu.add_command(
@@ -47,7 +57,6 @@ class MainMenuBuilder:
         )
         database_menu.add_command(
             label="Import from Lichess CSV...",
-            accelerator=MENU_ACCELERATORS[MainShortcuts.IMPORT_LICHESS_CSV],
             command=window.import_lichess_csv,
         )
         database_menu.add_command(
@@ -56,7 +65,6 @@ class MainMenuBuilder:
         )
         database_menu.add_command(
             label="Edit current...",
-            accelerator=MENU_ACCELERATORS[MainShortcuts.EDIT_DATABASE],
             command=window.edit_current_database,
         )
         database_menu.add_command(label="Export to PGN...", command=window.export_database_to_pgn)
@@ -65,16 +73,22 @@ class MainMenuBuilder:
             accelerator=MENU_ACCELERATORS[MainShortcuts.DELETE_CURRENT_PUZZLE],
             command=window.delete_current_puzzle,
         )
-        menu_bar.add_cascade(label="Database", menu=database_menu)
+        menu_bar.add_cascade(label="Courses", menu=database_menu)
 
         # Training menu: reviewing, favorites, progress -- everything about
         # the user's own training record, as opposed to deck content
         # (Database menu) and board utilities (Tools menu).
         training_menu = tk.Menu(menu_bar, tearoff=False)
         training_menu.add_command(
-            label="Review mistakes (this deck)", command=window.review_mistakes_this_deck
+            label="Review mistakes (this deck)",
+            accelerator=MENU_ACCELERATORS[MainShortcuts.REVIEW_DECK],
+            command=window.review_mistakes_this_deck,
         )
-        training_menu.add_command(label="Review all mistakes", command=window.review_all_mistakes)
+        training_menu.add_command(
+            label="Review all mistakes",
+            accelerator=MENU_ACCELERATORS[MainShortcuts.REVIEW_ALL],
+            command=window.review_all_mistakes,
+        )
         training_menu.add_separator()
         training_menu.add_command(
             label="Toggle favorite",
@@ -94,9 +108,7 @@ class MainMenuBuilder:
         training_menu.add_separator()
         training_menu.add_command(label="Statistics...", command=window.show_statistics)
         training_menu.add_separator()
-        training_menu.add_command(
-            label="Reset user data (this deck)...", command=window.reset_deck_userdata
-        )
+        training_menu.add_command(label="Manage user data...", command=window.manage_userdata)
         menu_bar.add_cascade(label="Training", menu=training_menu)
 
         # Tools menu
@@ -261,7 +273,6 @@ class MainMenuBuilder:
         )
         settings_menu.add_command(
             label="Choose font...",
-            accelerator=MENU_ACCELERATORS[MainShortcuts.CHOOSE_FONT],
             command=window.choose_font,
         )
         menu_bar.add_cascade(label="Settings", menu=settings_menu)
@@ -295,13 +306,18 @@ class MainMenuBuilder:
     def refresh_recent_menu(self) -> None:
         window = self.window
         self._recent_menu.delete(0, tk.END)
-        for database_path in window.state.settings.recent_database_paths:
+        for index, database_path in enumerate(window.state.settings.recent_database_paths, start=1):
+            resolved = window.user_store.library.relocate_known_path(database_path)
+            target = resolved or Path(database_path)
             self._recent_menu.add_command(
-                label=database_path,
-                command=lambda path=database_path: window.open_database(Path(path)),
+                label=f"{index}. {target}",
+                accelerator=(
+                    MENU_ACCELERATORS[MainShortcuts.OPEN_MOST_RECENT] if index == 1 else ""
+                ),
+                command=lambda path=target: window.open_database(path),
             )
         if not window.state.settings.recent_database_paths:
-            self._recent_menu.add_command(label="No recent databases", state=tk.DISABLED)
+            self._recent_menu.add_command(label="No recent courses", state=tk.DISABLED)
         self._recent_menu.add_separator()
         clear_state = tk.NORMAL if window.state.settings.recent_database_paths else tk.DISABLED
         self._file_menu.entryconfigure("Clear Recent Files", state=clear_state)
@@ -310,9 +326,9 @@ class MainMenuBuilder:
         window = self.window
         bindings = {
             MainShortcuts.OPEN_DATABASE: window.open_database,
-            MainShortcuts.NEW_DATABASE_FROM_PGN: window.create_database_from_pgn,
-            MainShortcuts.IMPORT_LICHESS_CSV: window.import_lichess_csv,
-            MainShortcuts.EDIT_DATABASE: window.edit_current_database,
+            MainShortcuts.OPEN_MOST_RECENT: window.open_most_recent_course,
+            MainShortcuts.COURSE_LIBRARY: window.open_course_library,
+            MainShortcuts.ADD_COURSE: window.add_course,
             MainShortcuts.SAVE_FAVORITE: window.toggle_current_favorite,
             MainShortcuts.DELETE_CURRENT_PUZZLE: window.delete_current_puzzle,
             MainShortcuts.CLEAR_MARKS: window.clear_marks,
@@ -335,11 +351,12 @@ class MainMenuBuilder:
             MainShortcuts.GO_TO_PUZZLE: window.go_to_puzzle,
             MainShortcuts.START_THEME: window.start_theme,
             MainShortcuts.CONFIGURE_FOLDERS: window.configure_folders,
-            MainShortcuts.CHOOSE_FONT: window.choose_font,
             MainShortcuts.CONFIGURE_ENGINES: window.configure_engines,
             MainShortcuts.TOGGLE_ENGINE_ANALYSIS: window.toggle_engine_analysis,
             MainShortcuts.PLAY_VS_ENGINE: window.open_engine_play_window,
             MainShortcuts.BOARD_VISION: window.open_board_vision_window,
+            MainShortcuts.REVIEW_DECK: window.review_mistakes_this_deck,
+            MainShortcuts.REVIEW_ALL: window.review_all_mistakes,
             MainShortcuts.TOGGLE_COORDINATES: window.toggle_coordinates,
             MainShortcuts.TOGGLE_EVALUATION_BAR: window.toggle_show_evaluation_bar,
             MainShortcuts.SHOW_SHORTCUTS: window.show_shortcuts_help,

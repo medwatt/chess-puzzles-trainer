@@ -77,7 +77,9 @@ class MainShortcuts:
     TOGGLE_SKIP = Shortcut("<Control-Shift-K>", "Toggle skip first move", TRAINING)
     TOGGLE_AUTO_NEXT = Shortcut("<Control-Shift-A>", "Toggle auto next", TRAINING)
     TOGGLE_CLEAN_COMMENTS = Shortcut("<Control-Shift-L>", "Toggle clean comments", TRAINING)
-    BOARD_VISION = Shortcut("<Control-v>", "Board vision", TRAINING)
+    BOARD_VISION = Shortcut("<Control-Shift-V>", "Board vision", TRAINING)
+    REVIEW_DECK = Shortcut("<Control-r>", "Review this deck", TRAINING)
+    REVIEW_ALL = Shortcut("<Control-Shift-R>", "Review all due puzzles", TRAINING)
 
     # Board & insights
     FLIP_BOARD = Shortcut("f", "Flip board", BOARD)
@@ -94,11 +96,11 @@ class MainShortcuts:
     TOGGLE_EVALUATION_BAR = Shortcut("<Control-Shift-B>", "Toggle evaluation bar", ENGINE)
 
     # Database & files
-    OPEN_DATABASE = Shortcut("<Control-o>", "Open database...", DATABASE)
-    NEW_DATABASE_FROM_PGN = Shortcut("<Control-n>", "New from PGN...", DATABASE)
-    IMPORT_LICHESS_CSV = Shortcut("<Control-i>", "Import Lichess CSV...", DATABASE)
-    EDIT_DATABASE = Shortcut("<Control-m>", "Edit database...", DATABASE)
-    SAVE_FAVORITE = Shortcut("<Control-s>", "Save to Favorites", DATABASE)
+    OPEN_DATABASE = Shortcut("<Control-o>", "Open Course File...", DATABASE)
+    OPEN_MOST_RECENT = Shortcut("<Control-KeyPress-1>", "Open most recent course", DATABASE)
+    COURSE_LIBRARY = Shortcut("<Control-l>", "Course Library...", DATABASE)
+    ADD_COURSE = Shortcut("<Control-n>", "Add Course...", DATABASE)
+    SAVE_FAVORITE = Shortcut("s", "Toggle favorite", DATABASE)
     DELETE_CURRENT_PUZZLE = Shortcut("<Control-Delete>", "Delete puzzle", DATABASE)
     SHOW_PGN = Shortcut("<Control-p>", "Show PGN viewer", DATABASE)
     COPY_PGN = Shortcut("<Control-Shift-P>", "Copy puzzle PGN", DATABASE)
@@ -107,7 +109,6 @@ class MainShortcuts:
 
     # Application
     SHOW_SHORTCUTS = Shortcut("?", "Keyboard shortcuts", APPLICATION)
-    CHOOSE_FONT = Shortcut("<Control-comma>", "Choose font...", APPLICATION)
     CONFIGURE_FOLDERS = Shortcut("<Control-Shift-D>", "Folders...", APPLICATION)
     EXIT = Shortcut("<Control-q>", "Quit", APPLICATION)
 
@@ -145,6 +146,8 @@ def accelerator_text(sequence: str) -> str:
     parts = []
     for token in sequence.strip("<>").split("-"):
         key = token.lower()
+        if key in {"key", "keypress"}:
+            continue
         if key in _KEY_DISPLAY:
             parts.append(_KEY_DISPLAY[key])
         elif len(token) == 1:

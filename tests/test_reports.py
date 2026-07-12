@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from chess_puzzles.dialogs.statistics import _summary_rows
-from chess_puzzles.reports import AttemptSummary, attempt_summary, format_duration_ms
+from chess_puzzles.reports import AttemptSummary, attempt_summary, deck_summaries, format_duration_ms
 from chess_puzzles.store import Attempt, UserStore
 
 
@@ -87,3 +87,23 @@ def test_format_duration_ms() -> None:
     assert format_duration_ms(0) == "0:00"
     assert format_duration_ms(65_000) == "1:05"
     assert format_duration_ms(3_665_000) == "1:01:05"
+
+
+def test_deck_summaries_group_attempt_quality(tmp_path: Path) -> None:
+    store = UserStore.open(tmp_path / "u.db")
+    for puzzle_id, mistakes, aids in (("p1", 0, 0), ("p2", 2, 1)):
+        store.record_attempt(
+            Attempt(
+                puzzle_id=puzzle_id, at="2026-01-01T00:00:00Z", outcome="solved",
+                mistakes=mistakes, aids=aids, grade="good", duration_ms=20_000,
+                database_id="course", database_path="/tmp/course.cpdb",
+            )
+        )
+
+    summary = deck_summaries(store.connection)[0]
+    assert summary.database_id == "course"
+    assert summary.attempted == 2
+    assert summary.clean_solves == 1
+    assert summary.mistakes == 2
+    assert summary.aids == 1
+    assert summary.total_ms == 40_000

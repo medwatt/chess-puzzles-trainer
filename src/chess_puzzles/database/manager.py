@@ -16,7 +16,7 @@ class DatabaseManagerDialog(tk.Toplevel):
         super().__init__(parent, name="databasemanager", class_="ChessPuzzlesDatabaseManager")
         self.database = database
         self.new_name: str | None = None
-        self.title(f"Puzzle Database Manager - {database.meta.name}")
+        self.title(f"Course Editor - {database.meta.name}")
         self.geometry(DATABASE_MANAGER_GEOMETRY)
         self.transient(parent)
         self.accepted = False
@@ -203,7 +203,7 @@ class DatabaseManagerDialog(tk.Toplevel):
             messagebox.showerror("Invalid database name", "Database name cannot be empty.", parent=self)
             return
         self.new_name = name
-        self.title(f"Puzzle Database Manager - {name}")
+        self.title(f"Course Editor - {name}")
 
     def _set_skip_for_rows(self, rows: tuple[str, ...] | list[str], enabled: bool) -> None:
         for row_id in rows:

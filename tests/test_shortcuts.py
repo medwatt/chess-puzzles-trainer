@@ -32,6 +32,7 @@ def test_every_shortcut_has_label_and_section() -> None:
 
 def test_accelerator_text_formats() -> None:
     assert accelerator_text("<Control-Shift-O>") == "Ctrl+Shift+O"
+    assert accelerator_text("<Control-KeyPress-1>") == "Ctrl+1"
     assert accelerator_text("<Control-comma>") == "Ctrl+,"
     assert accelerator_text("<Control-Delete>") == "Ctrl+Del"
     assert accelerator_text("<Control-space>") == "Ctrl+Space"

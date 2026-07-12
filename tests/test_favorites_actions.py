@@ -85,3 +85,28 @@ def test_unfavorite_from_favorites_view_removes_visible_source(tmp_path: Path) -
     assert user_store.favorite_ids("db1") == set()
     assert window.favorite_sources == []
     assert status.value == "Removed from favorites."
+
+
+def test_all_favorites_resolves_a_moved_deck_through_library(tmp_path: Path) -> None:
+    original = tmp_path / "old" / "deck.cpdb"
+    moved = tmp_path / "new" / "deck.cpdb"
+    original.parent.mkdir()
+    moved.parent.mkdir()
+    puzzle = Puzzle(title="Favorite", initial_fen=FEN, moves=(chess.Move.from_uci("e2e3"),))
+    db = ContentDatabase.create(original, ContentMeta(database_id="db1", name="Deck"), [puzzle])
+    db.close()
+    store = UserStore.open(tmp_path / "userdata.db")
+    store.library.set_root(tmp_path)
+    store.library.scan()
+    reopened = ContentDatabase.open(original)
+    stored = reopened.puzzle_at(0)
+    reopened.close()
+    store.add_favorite(stored.puzzle_id, "db1", str(original))
+    original.rename(moved)
+    store.library.scan()
+    window = SimpleNamespace(user_store=store)
+
+    favorites = MainDatabaseActions(window)._all_favorites()
+
+    assert len(favorites) == 1
+    assert favorites[0][1].database_path == str(moved.resolve())

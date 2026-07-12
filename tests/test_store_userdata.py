@@ -9,7 +9,7 @@ from chess_puzzles.store.userdata import Attempt, UserStore, VisionAttempt
 from chess_puzzles.vision.stats import vision_summary
 
 # Bumped whenever a migration is appended to _USER_MIGRATIONS.
-CURRENT_USER_VERSION = 3
+CURRENT_USER_VERSION = 4
 
 
 def _attempt(outcome: str = "solved") -> Attempt:
@@ -176,15 +176,14 @@ def test_deck_reset_deletes_only_that_decks_records(tmp_path: Path) -> None:
     store.set_ui("last_puzzle:course", "p2")
 
     assert store.deck_attempt_count("course") == 2
-    assert store.delete_deck_attempts("course") == 2
+    deleted = store.delete_deck_data(
+        "course", attempts=True, favorites=True, position=True
+    )
+    assert deleted == {"attempts": 2, "favorites": 1, "position": 1}
     assert store.deck_attempt_count("course") == 0
     assert store.deck_attempt_count("tactics") == 1
 
-    assert store.deck_favorite_count("course") == 1
-    assert store.delete_deck_favorites("course") == 1
     assert store.is_favorite("p3", "tactics")
-
-    store.delete_ui("last_puzzle:course")
     assert store.get_ui("last_puzzle:course") is None
 
 
@@ -205,6 +204,51 @@ def test_vision_history_reset(tmp_path: Path) -> None:
             elapsed_ms=900,
         )
     )
-    assert store.vision_attempt_count() == 1
+    assert sum(item.attempts for item in store.vision_histories()) == 1
     assert store.delete_vision_attempts() == 1
-    assert store.vision_attempt_count() == 0
+    assert store.vision_histories() == []
+
+
+def test_selective_vision_history_reset(tmp_path: Path) -> None:
+    store = UserStore.open(tmp_path / "u.db")
+    for drill_id in ("hanging", "checks"):
+        attempt = _vision()
+        store.record_vision_attempt(
+            VisionAttempt(drill_id, attempt.at, attempt.fen, attempt.orientation, attempt.answer,
+                          attempt.clicks, attempt.tp, attempt.fp, attempt.fn, attempt.passed,
+                          attempt.elapsed_ms)
+        )
+
+    histories = {history.drill_id: history.attempts for history in store.vision_histories()}
+    assert histories == {"hanging": 1, "checks": 1}
+    assert store.delete_vision_attempts({"hanging"}) == 1
+    assert [history.drill_id for history in store.vision_histories()] == ["checks"]
+
+
+def test_delete_all_training_data_preserves_general_ui_state(tmp_path: Path) -> None:
+    store = UserStore.open(tmp_path / "u.db")
+    store.record_attempt(_deck_attempt("p1", "course"))
+    store.add_favorite("p1", "course", "/tmp/course.cpdb")
+    store.set_note("p1", "remember this")
+    store.set_ui("last_puzzle:course", "p1")
+    store.set_ui("window_geometry", "800x600")
+    with store.connection:
+        store.connection.execute(
+            "INSERT INTO library_course"
+            " (database_id,name,description,kind,puzzle_count,chapter_count,pinned,status,added_at,indexed_at)"
+            " VALUES ('course','Course','','tactics',1,0,1,'paused','now','now')"
+        )
+    store.library.set_tags("course", ["Calculation"])
+
+    deleted = store.delete_all_training_data()
+
+    assert deleted["attempts"] == 1
+    assert store.deck_attempt_count("course") == 0
+    assert store.favorite_refs() == []
+    assert store.get_note("p1") == ""
+    assert store.get_ui("last_puzzle:course") is None
+    assert store.get_ui("window_geometry") == "800x600"
+    course = store.library.courses()[0]
+    assert not course.pinned
+    assert course.status == "active"
+    assert course.tags == ()

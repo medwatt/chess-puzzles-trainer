@@ -3,7 +3,7 @@ from __future__ import annotations
 import sqlite3
 from collections.abc import Iterable
 
-from chess_puzzles.reports.model import AttemptSummary
+from chess_puzzles.reports.model import AttemptSummary, DeckSummary
 
 
 def attempt_summary(
@@ -40,3 +40,20 @@ def attempt_summary(
         gave_up=int(row[2]),
         total_ms=int(row[3]),
     )
+
+
+def deck_summaries(conn: sqlite3.Connection) -> list[DeckSummary]:
+    rows = conn.execute(
+        "SELECT a.database_id, COALESCE(c.name, '') AS name, MAX(a.database_path) AS database_path, COUNT(*) AS attempted,"
+        " SUM(CASE WHEN outcome = 'solved' AND mistakes = 0 THEN 1 ELSE 0 END) AS clean_solves,"
+        " SUM(mistakes) AS mistakes, SUM(aids) AS aids, COALESCE(SUM(duration_ms), 0) AS total_ms"
+        " FROM attempt a LEFT JOIN library_course c ON c.database_id=a.database_id"
+        " GROUP BY a.database_id ORDER BY MAX(a.at) DESC, a.database_id"
+    )
+    return [
+        DeckSummary(
+            row["database_id"], row["name"], row["database_path"], row["attempted"],
+            row["clean_solves"], row["mistakes"], row["aids"], row["total_ms"]
+        )
+        for row in rows
+    ]

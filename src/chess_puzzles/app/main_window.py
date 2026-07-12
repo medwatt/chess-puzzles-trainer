@@ -500,7 +500,10 @@ class MainWindow:
             FolderField(
                 key="default_database_directory",
                 label="Database folder",
-                description="Where database dialogs start and where the Favorites database is kept.",
+                description=(
+                    "The Course Library scans this folder and its subfolders. "
+                    "Database file dialogs also start here."
+                ),
                 value=settings.default_database_directory or "",
             ),
             FolderField(
@@ -520,6 +523,9 @@ class MainWindow:
             default_database_directory=result["default_database_directory"] or None,
             piece_assets_directory=result["piece_assets_directory"] or None,
         )
+        database_folder = self.state.settings.default_database_directory
+        if database_folder:
+            self.user_store.library.set_root(database_folder)
         self._reload_piece_themes()
         self._status_var.set("Folders updated.")
 
@@ -677,9 +683,21 @@ class MainWindow:
         self._user_notes.save_now()
         self._database.create_database_from_pgn()
 
+    def add_course(self) -> None:
+        self._user_notes.save_now()
+        self._database.add_course()
+
     def open_database(self, database_path: Path | None = None) -> None:
         self._user_notes.save_now()
         self._database.open_database(database_path)
+
+    def open_most_recent_course(self) -> None:
+        self._user_notes.save_now()
+        self._database.open_most_recent_course()
+
+    def open_course_library(self) -> None:
+        self._user_notes.save_now()
+        self._database.open_course_library()
 
     def import_opening_course(self) -> None:
         self._user_notes.save_now()
@@ -1291,6 +1309,11 @@ class MainWindow:
     def show_statistics(self) -> None:
         StatisticsDialog(self.root, self.user_store.connection).show()
 
+    def manage_userdata(self) -> None:
+        self._user_notes.save_now()
+        self._finalize_visit()
+        self._database.manage_userdata()
+
     def _solved_summary_text(self, summary: AttemptSummary) -> str:
         if summary.solved_percent is None:
             return str(summary.solved)
@@ -1375,9 +1398,6 @@ class MainWindow:
 
     def review_all_mistakes(self) -> None:
         self._database.review_mistakes(scope="all")
-
-    def reset_deck_userdata(self) -> None:
-        self._database.reset_deck_userdata()
 
     def export_favorites_this_deck(self) -> None:
         self._database.export_favorites(scope="deck")

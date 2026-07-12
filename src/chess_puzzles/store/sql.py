@@ -97,3 +97,44 @@ CREATE TABLE IF NOT EXISTS vision_attempt (
 CREATE INDEX IF NOT EXISTS idx_vision_drill ON vision_attempt(drill_id);
 CREATE INDEX IF NOT EXISTS idx_vision_at ON vision_attempt(at);
 """
+
+
+LIBRARY_SCHEMA_SQL = """
+CREATE TABLE library_root (
+    path      TEXT PRIMARY KEY,
+    recursive INTEGER NOT NULL DEFAULT 1
+);
+
+CREATE TABLE library_course (
+    database_id   TEXT PRIMARY KEY,
+    name          TEXT NOT NULL,
+    description   TEXT NOT NULL DEFAULT '',
+    kind          TEXT NOT NULL DEFAULT 'tactics',
+    puzzle_count  INTEGER NOT NULL DEFAULT 0,
+    chapter_count INTEGER NOT NULL DEFAULT 0,
+    pinned        INTEGER NOT NULL DEFAULT 0,
+    status        TEXT NOT NULL DEFAULT 'active',
+    added_at      TEXT NOT NULL,
+    indexed_at    TEXT NOT NULL
+);
+
+CREATE TABLE library_location (
+    path        TEXT PRIMARY KEY,
+    database_id TEXT NOT NULL REFERENCES library_course(database_id) ON DELETE CASCADE,
+    mtime_ns    INTEGER NOT NULL,
+    file_size   INTEGER NOT NULL,
+    available   INTEGER NOT NULL DEFAULT 1
+);
+CREATE INDEX idx_library_location_database ON library_location(database_id);
+
+CREATE TABLE library_tag (
+    tag_id     INTEGER PRIMARY KEY AUTOINCREMENT,
+    name       TEXT NOT NULL COLLATE NOCASE UNIQUE
+);
+
+CREATE TABLE library_course_tag (
+    database_id TEXT NOT NULL REFERENCES library_course(database_id) ON DELETE CASCADE,
+    tag_id      INTEGER NOT NULL REFERENCES library_tag(tag_id) ON DELETE CASCADE,
+    PRIMARY KEY (database_id, tag_id)
+);
+"""
