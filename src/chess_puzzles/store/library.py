@@ -121,8 +121,27 @@ class CourseLibrary:
             if owned:
                 db.close()
 
+    def forget(self, database_id: str) -> None:
+        """Drop a deck from the index (arenas are session records, not courses).
+
+        Also self-heals installs from before arenas were excluded: opening an
+        old arena removes the rows its creation once registered."""
+        with self._conn:
+            self._conn.execute(
+                "DELETE FROM library_location WHERE database_id=?", (database_id,)
+            )
+            self._conn.execute("DELETE FROM library_course WHERE database_id=?", (database_id,))
+
     def scan(self) -> ScanResult:
         with self._conn:
+            # Arenas are session records, not courses; rows registered before
+            # they were excluded (or by any stray register call) are purged on
+            # every reconciliation, not just when the arena is next opened.
+            self._conn.execute(
+                "DELETE FROM library_location WHERE database_id IN"
+                " (SELECT database_id FROM library_course WHERE kind='arena')"
+            )
+            self._conn.execute("DELETE FROM library_course WHERE kind='arena'")
             self._conn.execute("UPDATE library_location SET available=0")
         discovered = indexed = unchanged = invalid = 0
         for root_row in self._conn.execute("SELECT path, recursive FROM library_root ORDER BY path"):

@@ -6,6 +6,7 @@ import tkinter as tk
 from tkinter import messagebox, ttk
 
 from chess_puzzles.store import UserStore
+from chess_puzzles.ui.table import autosize_columns
 from chess_puzzles.vision.registry import registry
 
 
@@ -17,6 +18,7 @@ class UserDataManagerDialog(tk.Toplevel):
         *,
         database_id: str | None = None,
         deck_name: str = "",
+        is_arena: bool = False,
     ) -> None:
         super().__init__(parent, name="userdatamanager", class_="ChessPuzzlesUserDataManager")
         self.title("Manage User Data")
@@ -25,7 +27,12 @@ class UserDataManagerDialog(tk.Toplevel):
         self.minsize(560, 380)
         self._store = store
         self._database_id = database_id
+        self._is_arena = is_arena
         self.changed = False
+        # Explicit result consumed by MainDatabaseActions: arena navigation
+        # must return to the frontier only when training history was selected
+        # for deletion, not when favorites or UI position alone changed.
+        self.attempts_deleted = False
 
         notebook = ttk.Notebook(self)
         notebook.pack(fill=tk.BOTH, expand=True, padx=12, pady=(12, 6))
@@ -60,6 +67,18 @@ class UserDataManagerDialog(tk.Toplevel):
             (self._deck_favorites, f"Favorites ({favorite_count})"),
         ):
             ttk.Checkbutton(frame, text=label, variable=variable).pack(anchor="w", pady=4)
+        if self._is_arena:
+            ttk.Label(
+                frame,
+                text=(
+                    "This is a rated session. Deleting its solve history returns the "
+                    "rating to the session's starting value, makes every queued puzzle "
+                    "unattempted again, and training resumes from the first puzzle."
+                ),
+                style="Muted.TLabel",
+                wraplength=520,
+                justify=tk.LEFT,
+            ).pack(anchor="w", pady=(8, 0))
         ttk.Button(frame, text="Delete selected...", command=self._delete_deck).pack(
             anchor="e", pady=(16, 0)
         )
@@ -70,17 +89,16 @@ class UserDataManagerDialog(tk.Toplevel):
         ttk.Label(frame, text="Select drill histories to delete.").pack(anchor="w", pady=(0, 8))
         columns = ("drill", "attempts", "last")
         self._vision_tree = ttk.Treeview(frame, columns=columns, show="headings", selectmode="extended")
-        for column, label, width in (
-            ("drill", "Drill", 270), ("attempts", "Attempts", 90), ("last", "Last activity", 170)
-        ):
+        for column, label in (("drill", "Drill"), ("attempts", "Attempts"), ("last", "Last activity")):
             self._vision_tree.heading(column, text=label)
-            self._vision_tree.column(column, width=width, anchor="w")
+            self._vision_tree.column(column, anchor="w")
         names = {drill.id: drill.name for drill in registry.all()}
         for history in self._store.vision_histories():
             self._vision_tree.insert(
                 "", "end", iid=history.drill_id,
                 values=(names.get(history.drill_id, history.drill_id), history.attempts, history.last_at[:10]),
             )
+        autosize_columns(self._vision_tree)
         self._vision_tree.pack(fill=tk.BOTH, expand=True)
         actions = ttk.Frame(frame)
         actions.pack(fill=tk.X, pady=(8, 0))
@@ -114,6 +132,7 @@ class UserDataManagerDialog(tk.Toplevel):
         ):
             return
         self._store.delete_deck_data(self._database_id, **selected)
+        self.attempts_deleted = selected["attempts"]
         self.changed = True
         self.destroy()
 
@@ -140,5 +159,6 @@ class UserDataManagerDialog(tk.Toplevel):
         ):
             return
         self._store.delete_all_training_data()
+        self.attempts_deleted = True
         self.changed = True
         self.destroy()

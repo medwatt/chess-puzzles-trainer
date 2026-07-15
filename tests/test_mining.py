@@ -55,6 +55,6 @@ def test_built_pgn_round_trips_through_loader_and_session() -> None:
 def test_mining_settings_round_trip(tmp_path) -> None:
     path = tmp_path / "mining.json"
     assert load_mining_settings(path) == MiningDialogSettings()
-    saved = MiningDialogSettings(csv_path="/x.csv", count=25, rating_min=1000, rating_max=1500)
+    saved = MiningDialogSettings(count=25, rating_min=1000, rating_max=1500)
     save_mining_settings(saved, path)
     assert load_mining_settings(path) == saved

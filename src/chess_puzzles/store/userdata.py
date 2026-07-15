@@ -8,6 +8,7 @@ from chess_puzzles.platform.paths import user_data_dir
 from chess_puzzles.store.clock import now_iso
 from chess_puzzles.store.library import CourseLibrary
 from chess_puzzles.store.sql import (
+    ARENA_ATTEMPT_SQL,
     ATTEMPT_LOCATOR_SQL,
     LIBRARY_SCHEMA_SQL,
     USER_SCHEMA_SQL,
@@ -22,6 +23,7 @@ _USER_MIGRATIONS: tuple[str, ...] = (
     VISION_SCHEMA_SQL,
     ATTEMPT_LOCATOR_SQL,
     LIBRARY_SCHEMA_SQL,
+    ARENA_ATTEMPT_SQL,
 )
 
 
@@ -47,6 +49,9 @@ class Attempt:
     # the deck being open. '' on attempts that predate the locator migration.
     database_id: str = ""
     database_path: str = ""
+    # The puzzle's difficulty at attempt time (lichess Rating header), so the
+    # arena rating fold never needs the content deck. None for unrated content.
+    puzzle_rating: int | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -110,8 +115,8 @@ class UserStore:
         with self._conn:
             self._conn.execute(
                 "INSERT INTO attempt"
-                " (puzzle_id, at, outcome, mistakes, aids, duration_ms, grade, database_id, database_path)"
-                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                " (puzzle_id, at, outcome, mistakes, aids, duration_ms, grade, database_id, database_path, puzzle_rating)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     a.puzzle_id,
                     a.at,
@@ -122,8 +127,16 @@ class UserStore:
                     a.grade,
                     a.database_id,
                     a.database_path,
+                    a.puzzle_rating,
                 ),
             )
+
+    def deck_attempted_ids(self, database_id: str) -> set[str]:
+        """Puzzle ids with at least one attempt in this deck (arena frontier/dedupe)."""
+        rows = self._conn.execute(
+            "SELECT DISTINCT puzzle_id FROM attempt WHERE database_id = ?", (database_id,)
+        )
+        return {row["puzzle_id"] for row in rows}
 
     def has_solved(self, puzzle_id: str) -> bool:
         """Whether this content was ever solved (in any deck).

@@ -18,9 +18,12 @@ DEFAULT_LICHESS_POPULARITY_MIN = 80
 
 @dataclass(frozen=True, slots=True)
 class LichessImportSettings:
-    """Persisted defaults for the Lichess import dialog."""
+    """Persisted filter defaults for the Lichess import dialog.
 
-    csv_path: str = ""
+    The CSV path itself is NOT here: it lives in AppSettings
+    (``lichess_csv_path``, Settings > Paths) because several features share
+    it (import, rated sessions, board vision, blunder mining)."""
+
     sample_size: int = DEFAULT_LICHESS_SAMPLE_SIZE
     rating_min: int = DEFAULT_LICHESS_RATING_MIN
     rating_max: int = DEFAULT_LICHESS_RATING_MAX
@@ -34,13 +37,23 @@ def load_lichess_settings(path: str | Path = DEFAULT_LICHESS_SETTINGS_PATH) -> L
         return LichessImportSettings()
     data = load_json_object(settings_path, error_message="lichess.json must contain a JSON object")
     return LichessImportSettings(
-        csv_path=_string_value(data, "csv_path", ""),
         sample_size=_int_value(data, "sample_size", DEFAULT_LICHESS_SAMPLE_SIZE, 1, 10_000),
         rating_min=_int_value(data, "rating_min", DEFAULT_LICHESS_RATING_MIN, 0, 3000),
         rating_max=_int_value(data, "rating_max", DEFAULT_LICHESS_RATING_MAX, 0, 3000),
         popularity_min=_int_value(data, "popularity_min", DEFAULT_LICHESS_POPULARITY_MIN, 0, 100),
         themes=_string_tuple(data.get("themes", ())),
     )
+
+
+def legacy_csv_path(path: str | Path = DEFAULT_LICHESS_SETTINGS_PATH) -> str:
+    """The csv_path this file held before it moved to AppSettings.
+
+    Read once at startup to migrate old installs; never written back."""
+    settings_path = Path(path)
+    if not settings_path.exists():
+        return ""
+    data = load_json_object(settings_path, error_message="lichess.json must contain a JSON object")
+    return _string_value(data, "csv_path", "")
 
 
 def save_lichess_settings(
@@ -50,7 +63,6 @@ def save_lichess_settings(
     save_json_object(
         path,
         {
-            "csv_path": settings.csv_path,
             "sample_size": settings.sample_size,
             "rating_min": settings.rating_min,
             "rating_max": settings.rating_max,

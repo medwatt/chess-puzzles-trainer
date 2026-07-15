@@ -2,11 +2,25 @@ from __future__ import annotations
 
 import sqlite3
 import uuid
+from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
 from tkinter import filedialog, messagebox
 
 import chess
+
+from chess_puzzles.arena import (
+    arenas_dir,
+    create_arena,
+    first_attempt_losses,
+    frontier_index,
+    new_session_path,
+    read_arena_config,
+    sample_batch,
+    session_rating,
+)
+from chess_puzzles.arena.dialog import ArenaStartDialog
+from chess_puzzles.arena.sessions_dialog import ArenaSessionsDialog
 
 from chess_puzzles.database.manager import DatabaseManagerDialog
 from chess_puzzles.dialogs.choice import ChoiceDialog
@@ -30,6 +44,7 @@ from chess_puzzles.lichess import (
 )
 from chess_puzzles.review import DueReview, due_reviews
 from chess_puzzles.store import (
+    DECK_KIND_ARENA,
     DECK_KIND_REPERTOIRE,
     ContentDatabase,
     ContentMeta,
@@ -82,6 +97,11 @@ class MainDatabaseActions:
         window = self.window
         if window.favorites_view:
             window._status_var.set("Open a course to edit it (the favorites view is read-only).")
+            return
+        if window.arena_mode:
+            # Arena content is generated history: attempts and future reviews
+            # reference these rows, so editing/renumbering would break them.
+            window._status_var.set("Rated sessions are read-only (their history backs your reviews).")
             return
         if window.database is None:
             selected = filedialog.askopenfilename(
@@ -280,10 +300,10 @@ class MainDatabaseActions:
         if not configured:
             messagebox.showinfo(
                 "Course Library folder",
-                "Choose your database folder in Settings > Folders before opening the Course Library.",
+                "Choose your database folder in Settings > Paths before opening the Course Library.",
                 parent=window.root,
             )
-            window.configure_folders()
+            window.configure_paths()
             configured = window.state.settings.default_database_directory
             if not configured:
                 return
@@ -295,9 +315,14 @@ class MainDatabaseActions:
 
     def generate_blunder_puzzles(self) -> None:
         window = self.window
+        csv_path = window.require_lichess_csv()
+        if csv_path is None:
+            return
         engine = load_engine_config().default_engine
         engine_ok = engine is not None and Path(engine.command).is_file()
-        options = BlunderMineDialog(window.root, engine.name if engine_ok else None).show_modal()
+        options = BlunderMineDialog(
+            window.root, engine.name if engine_ok else None, csv_path
+        ).show_modal()
         if options is None:
             return
         if not engine_ok:
@@ -349,7 +374,12 @@ class MainDatabaseActions:
 
     def import_lichess_csv(self) -> None:
         window = self.window
-        options = LichessImportDialog(window.root, window.theme_service.current).show_modal()
+        csv_path = window.require_lichess_csv()
+        if csv_path is None:
+            return
+        options = LichessImportDialog(
+            window.root, window.theme_service.current, csv_path
+        ).show_modal()
         if options is None:
             return
         try:
@@ -418,7 +448,15 @@ class MainDatabaseActions:
             return None
 
     def _use_database(self, database: ContentDatabase, path: Path) -> None:
-        self.window.user_store.library.register(path, database)
+        if database.kind == DECK_KIND_ARENA:
+            # A session is a training record, not a course: it stays out of
+            # the Course Library (and removes itself if an older version of
+            # the app registered it). The review queue still finds its
+            # content through the path recorded on each attempt.
+            self.window.user_store.library.forget(database.database_id)
+            self.window.user_store.set_ui("arena:last_path", str(path))
+        else:
+            self.window.user_store.library.register(path, database)
         self.window.user_store.update_favorite_database_path(database.database_id, str(path))
         self._activate_database(
             database,
@@ -472,6 +510,14 @@ class MainDatabaseActions:
             self.show_empty_state(empty_status)
 
     def _resume_index(self, db: ContentDatabase) -> int:
+        if db.kind == DECK_KIND_ARENA:
+            # Resume at the frontier: the first queued puzzle without an
+            # attempt (a refill queues several at once, so it is not simply
+            # the last one). All attempted -> land on the end; next_puzzle
+            # refills from there.
+            attempted = self.window.user_store.deck_attempted_ids(db.database_id)
+            frontier = frontier_index(db, attempted)
+            return frontier if frontier is not None else max(db.count() - 1, 0)
         last = self.window.user_store.get_ui(f"last_puzzle:{db.database_id}")
         idx = db.index_of_id(last) if last else None
         return idx if idx is not None else 0
@@ -658,20 +704,158 @@ class MainDatabaseActions:
             empty_status="No favorites.",
         )
 
+    def start_arena_session(self) -> None:
+        """Create a new rated-session deck and serve its first batch."""
+        window = self.window
+        csv_path = window.require_lichess_csv()
+        if csv_path is None:
+            return
+        config = ArenaStartDialog(
+            window.root,
+            window.theme_service.current,
+            csv_path,
+            default_rating=self._last_arena_rating(),
+        ).show_modal()
+        if config is None:
+            return
+        window.root.configure(cursor="watch")
+        window.root.update_idletasks()
+        try:
+            batch = sample_batch(config, float(config.start_rating), set())
+        except Exception as exc:
+            messagebox.showerror("Could not sample puzzles", str(exc), parent=window.root)
+            return
+        finally:
+            window.root.configure(cursor="")
+        if not batch:
+            messagebox.showinfo(
+                "No puzzles found",
+                "No puzzles matched the rating band and filters. Try different settings.",
+                parent=window.root,
+            )
+            return
+        started = datetime.now()
+        directory = arenas_dir()
+        directory.mkdir(parents=True, exist_ok=True)
+        path = new_session_path(directory, started)
+        try:
+            database = create_arena(path, config, f"Arena {started:%Y-%m-%d %H:%M}", batch)
+        except Exception as exc:
+            messagebox.showerror("Could not create session", str(exc), parent=window.root)
+            return
+        self._use_database(database, path)
+        window._status_var.set(
+            f"Rated session started at {config.start_rating} — good luck!"
+        )
+
+    def _last_arena_rating(self) -> int:
+        """Where the most recent session's rating stands, derived on demand.
+
+        Recomputed from the arena file + attempt log (nothing cached, so a
+        user-data reset is reflected immediately); 1500 when there is no
+        usable previous session."""
+        window = self.window
+        last = window.user_store.get_ui("arena:last_path")
+        if not last or not Path(last).is_file():
+            return 1500
+        try:
+            database = ContentDatabase.open(last)
+        except (OSError, sqlite3.DatabaseError, ValueError):
+            return 1500
+        try:
+            config = read_arena_config(database)
+            return round(
+                session_rating(
+                    window.user_store.connection, database.database_id, config.start_rating
+                )
+            )
+        finally:
+            database.close()
+
+    def continue_arena_session(self) -> None:
+        """Reopen the most recent arena at its frontier."""
+        window = self.window
+        last = window.user_store.get_ui("arena:last_path")
+        path = Path(last) if last else None
+        if path is None or not path.is_file():
+            window._status_var.set(
+                "No rated session to continue — use Training > Start rated session."
+            )
+            return
+        if window.database_path is not None and path.resolve() == window.database_path.resolve():
+            window._status_var.set("This rated session is already open.")
+            return
+        self.open_database(path)
+        # Everything already attempted? Fetch the next batch immediately so
+        # "continue" always lands on a playable puzzle.
+        if window.arena_mode and window.database is not None:
+            attempted = window.user_store.deck_attempted_ids(window.database.database_id)
+            if frontier_index(window.database, attempted) is None:
+                window.next_puzzle()
+
+    def review_arena_mistakes(self) -> None:
+        """Serve the open session's historical rated mistakes.
+
+        First-attempt losses, not the due-review queue: a mistake stays in
+        this list even after a clean review re-solve. Served through the
+        transient review view so attempts keep the arena locator (and, being
+        re-solves, never move the session rating)."""
+        window = self.window
+        if not window.arena_mode or window.database is None:
+            window._status_var.set("Open a rated session to review its mistakes.")
+            return
+        losses = first_attempt_losses(
+            window.user_store.connection, window.database.database_id
+        )
+        pairs = []
+        for puzzle_id in losses:
+            puzzle = window.database.puzzle_by_id(puzzle_id)
+            if puzzle is not None:
+                ref = FavoriteRef(
+                    puzzle_id, window.database.database_id, str(window.database_path)
+                )
+                pairs.append((puzzle, ref))
+        if not pairs:
+            window._status_var.set("No rated mistakes in this session.")
+            return
+        self._use_favorites_view(pairs, f"Session mistakes — {len(pairs)}", review=True)
+
+    def manage_arena_sessions(self) -> None:
+        """Browse/resume/delete rated sessions; open the one picked."""
+        window = self.window
+        open_path = window.database_path if window.arena_mode else None
+        picked = ArenaSessionsDialog(
+            window.root, window.user_store.connection, open_path=open_path
+        ).show()
+        # A deletion may have removed the session "Continue" points at.
+        last = window.user_store.get_ui("arena:last_path")
+        if last and not Path(last).is_file():
+            window.user_store.set_ui("arena:last_path", "")
+        if picked is not None:
+            self.open_database(picked)
+
     def manage_userdata(self) -> None:
         """Open scoped training-data management without touching deck content."""
         window = self.window
         has_deck = window.database is not None and not window.favorites_view
         database_id = window.database.database_id if has_deck else None
         deck_name = window.database.meta.name if has_deck else ""
-        changed = UserDataManagerDialog(
+        dialog = UserDataManagerDialog(
             window.root,
             window.user_store,
             database_id=database_id,
             deck_name=deck_name,
-        ).show()
+            is_arena=window.arena_mode,
+        )
+        changed = dialog.show()
         if changed:
             if has_deck:
+                # Deleting arena attempts moves the frontier (typically back
+                # to the first puzzle) -- resume there, not at the old index.
+                # Favorites/position-only deletions leave attempts untouched
+                # and must not move the user.
+                if window.arena_mode and dialog.attempts_deleted:
+                    window.current_index = self._resume_index(window.database)
                 window.load_current_puzzle()
             window._refresh_session_stats()
             window._status_var.set("User data updated.")
@@ -680,6 +864,9 @@ class MainDatabaseActions:
         window = self.window
         if window.favorites_view:
             window._status_var.set("Deleting puzzles is disabled in the favorites view.")
+            return
+        if window.arena_mode:
+            window._status_var.set("Rated sessions are read-only (their history backs your reviews).")
             return
         if window.session is None or window.database is None:
             return

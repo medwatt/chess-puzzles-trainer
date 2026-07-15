@@ -3,9 +3,8 @@ from __future__ import annotations
 import tkinter as tk
 from dataclasses import dataclass
 from pathlib import Path
-from tkinter import filedialog, messagebox, ttk
+from tkinter import messagebox, ttk
 
-from chess_puzzles.lichess.settings import load_lichess_settings
 from chess_puzzles.mining.settings import (
     MiningDialogSettings,
     load_mining_settings,
@@ -23,7 +22,6 @@ class BlunderMineOptions:
 
     def to_settings(self) -> MiningDialogSettings:
         return MiningDialogSettings(
-            csv_path=str(self.csv_path),
             count=self.count,
             rating_min=self.rating_min,
             rating_max=self.rating_max,
@@ -33,20 +31,20 @@ class BlunderMineOptions:
 class BlunderMineDialog(tk.Toplevel):
     """Collect parameters for generating a blunder-check deck.
 
-    Mirrors the Lichess import dialog; the engine itself is not chosen here
+    ``csv_path`` is the app-wide Lichess CSV (Settings > Paths), resolved by
+    the caller; the dialog only displays it. The engine is not chosen here
     (the app's default engine is used) but is shown so a missing
     configuration is obvious before a long run starts."""
 
-    def __init__(self, parent: tk.Misc, engine_name: str | None) -> None:
+    def __init__(self, parent: tk.Misc, engine_name: str | None, csv_path: str | Path) -> None:
         super().__init__(parent, name="blundermine", class_="ChessPuzzlesBlunderMine")
         self.title("Generate Blunder Puzzles")
         self.transient(parent)
         self.resizable(False, False)
         self.result: BlunderMineOptions | None = None
         self._settings = load_mining_settings()
+        self._csv_path = Path(csv_path)
 
-        csv_default = self._settings.csv_path or load_lichess_settings().csv_path
-        self.csv_path_var = tk.StringVar(value=csv_default)
         self.count_var = tk.StringVar(value=str(self._settings.count))
         self.rating_min_var = tk.DoubleVar(value=self._settings.rating_min)
         self.rating_max_var = tk.DoubleVar(value=self._settings.rating_max)
@@ -56,11 +54,10 @@ class BlunderMineDialog(tk.Toplevel):
         body = ttk.Frame(self, padding=12)
         body.pack(fill=tk.BOTH, expand=True)
 
-        ttk.Label(body, text="Lichess CSV").grid(row=0, column=0, sticky="w", pady=4)
-        ttk.Entry(body, textvariable=self.csv_path_var, state="readonly", width=52).grid(
-            row=0, column=1, sticky="ew", padx=(0, 8), pady=4
+        ttk.Label(body, text="Puzzles from").grid(row=0, column=0, sticky="w", pady=4)
+        ttk.Label(body, text=self._csv_path.name, style="Muted.TLabel").grid(
+            row=0, column=1, sticky="w", padx=(0, 8), pady=4
         )
-        ttk.Button(body, text="Browse...", command=self._browse).grid(row=0, column=2, sticky="e", pady=4)
 
         ttk.Label(body, text="Number of puzzles").grid(row=1, column=0, sticky="w", pady=4)
         ttk.Entry(body, textvariable=self.count_var, width=18).grid(row=1, column=1, sticky="w", pady=4)
@@ -113,27 +110,7 @@ class BlunderMineDialog(tk.Toplevel):
         ).grid(row=0, column=1, sticky="ew", padx=(8, 8))
         ttk.Label(frame, textvariable=display_var, width=6, anchor=tk.E).grid(row=0, column=2, sticky="e")
 
-    def _browse(self) -> None:
-        current = self.csv_path_var.get().strip()
-        initialdir = Path(current).expanduser().parent if current else Path.home()
-        path = filedialog.askopenfilename(
-            parent=self,
-            title="Choose Lichess CSV",
-            initialdir=str(initialdir),
-            filetypes=[("CSV files", "*.csv"), ("All files", "*")],
-        )
-        if path:
-            self.csv_path_var.set(path)
-
     def _accept(self) -> None:
-        csv_text = self.csv_path_var.get().strip()
-        if not csv_text:
-            messagebox.showerror("Missing CSV file", "Choose a Lichess CSV file first.", parent=self)
-            return
-        csv_path = Path(csv_text).expanduser()
-        if not csv_path.is_file():
-            messagebox.showerror("Missing CSV file", "The selected CSV file does not exist.", parent=self)
-            return
         try:
             count = int(self.count_var.get().strip())
         except ValueError:
@@ -149,6 +126,6 @@ class BlunderMineDialog(tk.Toplevel):
             )
             return
         self.result = BlunderMineOptions(
-            csv_path=csv_path, count=count, rating_min=rating_min, rating_max=rating_max
+            csv_path=self._csv_path, count=count, rating_min=rating_min, rating_max=rating_max
         )
         self.destroy()

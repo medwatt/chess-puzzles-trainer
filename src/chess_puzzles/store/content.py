@@ -30,6 +30,10 @@ _META_KEYS = (
 # reads correctly with no migration.
 DECK_KIND_TACTICS = "tactics"
 DECK_KIND_REPERTOIRE = "repertoire"
+# A rated-session deck: the app appends sampled puzzles to it as they are
+# served, and derives the session's rating from its attempt history. Content
+# is generated history, treated as read-only by editing UI.
+DECK_KIND_ARENA = "arena"
 
 _COLOR_TO_TEXT = {chess.WHITE: "white", chess.BLACK: "black"}
 _TEXT_TO_COLOR = {"white": chess.WHITE, "black": chess.BLACK}
@@ -166,6 +170,29 @@ class ContentDatabase:
     def iter_puzzles(self) -> Iterator[Puzzle]:
         for row in self._conn.execute("SELECT * FROM puzzle ORDER BY ordinal"):
             yield _row_to_puzzle(row)
+
+    def puzzle_ids(self) -> set[str]:
+        rows = self._conn.execute("SELECT DISTINCT puzzle_id FROM puzzle")
+        return {row["puzzle_id"] for row in rows}
+
+    def append_puzzles(self, puzzles: Iterable[Puzzle]) -> int:
+        """Add puzzles after the current last ordinal (arena refills)."""
+        start = self._conn.execute("SELECT COALESCE(MAX(ordinal), 0) FROM puzzle").fetchone()[0]
+        rows = [
+            _puzzle_to_row(puzzle, ordinal)
+            for ordinal, puzzle in enumerate(puzzles, start=start + 1)
+        ]
+        if not rows:
+            return 0
+        with self._conn:
+            self._conn.executemany(
+                "INSERT INTO puzzle (puzzle_id, ordinal, title, initial_fen, moves, comments, headers,"
+                " pgn_text, player_color, skip_first_move, theme, created_at)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                rows,
+            )
+            self._touch()
+        return len(rows)
 
     def themes(self) -> list[str]:
         rows = self._conn.execute(

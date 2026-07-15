@@ -34,6 +34,9 @@ class AppSettings:
     recent_database_paths: tuple[str, ...] = field(default_factory=tuple)
     default_database_directory: str | None = None
     piece_assets_directory: str | None = None
+    # The one Lichess puzzle CSV every feature samples from (import, rated
+    # sessions, board vision, blunder mining). Configured in Settings > Paths.
+    lichess_csv_path: str | None = None
 
     def to_json(self) -> dict[str, Any]:
         return asdict(self)
@@ -74,6 +77,7 @@ class AppSettings:
             recent_database_paths=tuple(str(path) for path in recent),
             default_database_directory=default_dir,
             piece_assets_directory=pieces_dir,
+            lichess_csv_path=_optional_path(data.get("lichess_csv_path")),
         )
 
 

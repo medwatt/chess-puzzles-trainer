@@ -25,14 +25,41 @@ class LichessImportCriteria:
 
 
 class LichessCsvImporter:
-    def sample_puzzles(self, csv_path: str | Path, criteria: LichessImportCriteria, seed: int | None = None) -> list[Puzzle]:
+    def sample_puzzles(
+        self,
+        csv_path: str | Path,
+        criteria: LichessImportCriteria,
+        seed: int | None = None,
+        *,
+        exclude_ids: frozenset[str] | set[str] = frozenset(),
+        row_budget: int | None = None,
+    ) -> list[Puzzle]:
+        """Sample matching puzzles starting from a random offset.
+
+        ``exclude_ids`` skips already-known puzzles (arena dedupe).
+        ``row_budget`` caps the total rows scanned so a sparse filter degrades
+        to a short sample instead of an unbounded read (arena refills run on
+        the UI thread).
+        """
         path = Path(csv_path)
         rng = random.Random(seed) if seed is not None else random.Random()
         file_size = path.stat().st_size
         start_offset = rng.randrange(file_size) if file_size > 0 else 0
-        puzzles = self._scan_from_offset(path, start_offset, criteria)
+        budget = [row_budget] if row_budget is not None else None
+        puzzles = self._scan_from_offset(
+            path, start_offset, criteria, exclude_ids=exclude_ids, budget=budget
+        )
         if len(puzzles) < criteria.sample_size and start_offset > 0:
-            puzzles.extend(self._scan_from_offset(path, 0, criteria, stop_offset=start_offset))
+            puzzles.extend(
+                self._scan_from_offset(
+                    path,
+                    0,
+                    criteria,
+                    stop_offset=start_offset,
+                    exclude_ids=exclude_ids,
+                    budget=budget,
+                )
+            )
         return puzzles[: criteria.sample_size]
 
     def default_description(self, criteria: LichessImportCriteria) -> str:
@@ -53,7 +80,11 @@ class LichessCsvImporter:
         criteria: LichessImportCriteria,
         *,
         stop_offset: int | None = None,
+        exclude_ids: frozenset[str] | set[str] = frozenset(),
+        budget: list[int] | None = None,
     ) -> list[Puzzle]:
+        # ``budget`` is a single-item list so the remaining row allowance is
+        # shared across the wrap-around second scan.
         puzzles: list[Puzzle] = []
         with path.open("rb") as raw_handle:
             header_line = raw_handle.readline()
@@ -66,11 +97,17 @@ class LichessCsvImporter:
             while True:
                 if stop_offset is not None and raw_handle.tell() >= stop_offset:
                     break
+                if budget is not None:
+                    if budget[0] <= 0:
+                        break
+                    budget[0] -= 1
                 line = raw_handle.readline()
                 if not line:
                     break
                 row = self._row_from_line(headers, line)
                 if row is None or not self._row_matches(row, criteria):
+                    continue
+                if exclude_ids and row.get("PuzzleId", "").strip() in exclude_ids:
                     continue
                 puzzle = self._puzzle_from_row(row, len(puzzles) + 1, criteria.themes)
                 if puzzle is not None:

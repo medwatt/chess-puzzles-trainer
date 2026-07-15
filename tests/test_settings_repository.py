@@ -37,6 +37,36 @@ def test_settings_load_partial_json_uses_dataclass_defaults(tmp_path) -> None:
     assert settings.ui_theme_id == "dark"
     assert settings.font_size == 10
     assert settings.piece_theme_id == DEFAULT_PIECE_THEME_ID
+    assert settings.lichess_csv_path is None
+
+
+def test_lichess_csv_path_round_trips(tmp_path) -> None:
+    repository = SettingsRepository(tmp_path / "settings.json")
+    settings = replace(AppSettings(), lichess_csv_path="/data/lichess_db_puzzle.csv")
+
+    repository.save(settings)
+
+    assert repository.load().lichess_csv_path == "/data/lichess_db_puzzle.csv"
+
+
+def test_legacy_lichess_json_csv_path_is_readable_once(tmp_path) -> None:
+    # Old installs kept the CSV path in lichess.json; startup migrates it
+    # into AppSettings and new saves of lichess.json no longer carry it.
+    from chess_puzzles.lichess.settings import (
+        legacy_csv_path,
+        load_lichess_settings,
+        save_lichess_settings,
+    )
+
+    path = tmp_path / "lichess.json"
+    path.write_text('{"csv_path": "/old/puzzles.csv", "sample_size": 7}', encoding="utf-8")
+
+    assert legacy_csv_path(path) == "/old/puzzles.csv"
+    settings = load_lichess_settings(path)
+    assert settings.sample_size == 7
+
+    save_lichess_settings(settings, path)
+    assert legacy_csv_path(path) == ""
 
 
 def test_theme_repositories_include_app_and_board_choices() -> None:

@@ -10,6 +10,7 @@ from tkinter import filedialog, font, messagebox, simpledialog
 import chess
 
 from chess_puzzles.app.app_state import AppState
+from chess_puzzles.app.info_display import HIDDEN_TEXT, info_display_for
 from chess_puzzles.app.main_database_actions import MainDatabaseActions
 from chess_puzzles.app.main_layout import MainLayoutBuilder
 from chess_puzzles.app.main_menu import MainMenuBuilder
@@ -31,7 +32,7 @@ from chess_puzzles.constants import (
 )
 from chess_puzzles.board.input import BoardEvent, MoveRequested
 from chess_puzzles.dialogs.choice import ChoiceDialog
-from chess_puzzles.dialogs.folders import FolderField, FoldersDialog
+from chess_puzzles.dialogs.paths import PathField, PathsDialog
 from chess_puzzles.dialogs.font import FontChooserDialog
 from chess_puzzles.dialogs.shortcuts_help import ShortcutsHelpDialog
 from chess_puzzles.dialogs.statistics import StatisticsDialog
@@ -39,7 +40,6 @@ from chess_puzzles.engine import EngineController, EngineState
 from chess_puzzles.engine.config import EngineConfig, load_engine_config, save_engine_config
 from chess_puzzles.engine.dialogs import EngineConfigDialog
 from chess_puzzles.engine.play_window import EnginePlayWindow
-from chess_puzzles.lichess.settings import load_lichess_settings
 from chess_puzzles.vision.window import BoardVisionWindow
 from chess_puzzles.platform.audio import AudioPlayer
 from chess_puzzles.pgn import PgnLoader
@@ -53,6 +53,7 @@ from chess_puzzles.puzzle.prefix import drill_prefix_length
 from chess_puzzles.reports import AttemptSummary, attempt_summary, format_duration_ms
 from chess_puzzles.settings.repository import SettingsRepository
 from chess_puzzles.store import (
+    DECK_KIND_ARENA,
     DECK_KIND_REPERTOIRE,
     Attempt,
     ContentDatabase,
@@ -60,6 +61,7 @@ from chess_puzzles.store import (
     UserStore,
     now_iso,
 )
+from chess_puzzles.arena import puzzle_rating_of, read_arena_config, refill, session_rating
 from chess_puzzles.settings.theme_repository import (
     UiTheme,
     available_piece_themes,
@@ -144,6 +146,14 @@ class MainWindow:
         self._line_demonstrated = False
         self._visit_recorded = False
         self._solve_clock_start: float | None = None
+        # Mistakes/aids from earlier runs of this visit: PuzzleSession.reset()
+        # zeroes its counters, but the recorded attempt must keep the evidence
+        # (mistake -> reset -> clean finish is not a flawless solve).
+        self._carry_mistakes = 0
+        self._carry_aids = 0
+        # Cached arena session rating (recomputed on load and after attempts;
+        # the fold itself lives in arena.rating and derives from the log).
+        self._arena_rating: float | None = None
 
         # Engine config and analysis controller
         self.engine_config: EngineConfig = load_engine_config()
@@ -239,6 +249,14 @@ class MainWindow:
         self._layout.board.clear_annotations()
 
     def reset_position(self) -> None:
+        """Restart the board without erasing evidence from this visit.
+
+        This is deliberately uniform across tactics, repertoire, reviews, and
+        rated sessions: Reset is a way to replay the position, not a way to
+        turn a mistaken or assisted attempt into a clean one. PuzzleSession's
+        per-run counters reset; the carried counters are persisted when the
+        visit is eventually recorded.
+        """
         if self.session is None:
             self._layout.board.set_position(chess.Board())
             self._layout.board.set_last_move(None)
@@ -250,6 +268,9 @@ class MainWindow:
         # _seen_refutations survives a reset on purpose: a trap already
         # experienced this visit is not re-offered after re-solving.
         self._avoided_traps = []
+        # The run's counters restart, but the visit's evidence must not.
+        self._carry_mistakes += self.session.mistakes
+        self._carry_aids += self.session.aids_used
         self.session.reset()
         self._refresh_from_session("Puzzle reset.")
         if self.session.in_prefix:
@@ -319,6 +340,9 @@ class MainWindow:
 
     def toggle_current_skip(self) -> None:
         if self.session is None or self.database is None:
+            return
+        if self.arena_mode:
+            self._status_var.set("Rated-session puzzles cannot be edited.")
             return
         value = not self.session.puzzle.skip_first_move
         self.database.set_skip_first_move(self.current_index + 1, value)
@@ -494,10 +518,10 @@ class MainWindow:
                 self._status_var.set(f"Started theme: {theme}")
                 return
 
-    def configure_folders(self) -> None:
+    def configure_paths(self) -> None:
         settings = self.state.settings
         fields = (
-            FolderField(
+            PathField(
                 key="default_database_directory",
                 label="Database folder",
                 description=(
@@ -506,7 +530,7 @@ class MainWindow:
                 ),
                 value=settings.default_database_directory or "",
             ),
-            FolderField(
+            PathField(
                 key="piece_assets_directory",
                 label="Custom pieces folder",
                 description=(
@@ -515,19 +539,51 @@ class MainWindow:
                 ),
                 value=settings.piece_assets_directory or "",
             ),
+            PathField(
+                key="lichess_csv_path",
+                label="Lichess puzzle CSV",
+                description=(
+                    "The lichess.org puzzle database (CSV). Used by the CSV import, "
+                    "rated sessions, board vision, and the blunder generator."
+                ),
+                value=settings.lichess_csv_path or "",
+                kind="file",
+                filetypes=(("CSV files", "*.csv"), ("All files", "*")),
+            ),
         )
-        result = FoldersDialog(self.root, fields).show_modal()
+        result = PathsDialog(self.root, fields).show_modal()
         if result is None:
             return
         self.save_settings(
             default_database_directory=result["default_database_directory"] or None,
             piece_assets_directory=result["piece_assets_directory"] or None,
+            lichess_csv_path=result["lichess_csv_path"] or None,
         )
         database_folder = self.state.settings.default_database_directory
         if database_folder:
             self.user_store.library.set_root(database_folder)
         self._reload_piece_themes()
-        self._status_var.set("Folders updated.")
+        self._status_var.set("Paths updated.")
+
+    def require_lichess_csv(self) -> str | None:
+        """The configured Lichess CSV, or None after guiding the user to set it.
+
+        The single gate every CSV-consuming feature goes through, so the
+        path is only ever configured in Settings > Paths."""
+        path = self.state.settings.lichess_csv_path
+        if path and Path(path).is_file():
+            return path
+        if messagebox.askyesno(
+            "Lichess CSV needed",
+            "This feature reads the Lichess puzzle CSV, which is not configured yet."
+            " Choose it now in Settings > Paths?",
+            parent=self.root,
+        ):
+            self.configure_paths()
+            path = self.state.settings.lichess_csv_path
+            if path and Path(path).is_file():
+                return path
+        return None
 
     def _reload_piece_themes(self) -> None:
         self.piece_themes = available_piece_themes(self.state.settings.piece_assets_directory)
@@ -616,13 +672,8 @@ class MainWindow:
         if self._board_vision_window is not None and self._board_vision_window.winfo_exists():
             self._board_vision_window.lift()
             return
-        csv_path = load_lichess_settings().csv_path
-        if not csv_path or not Path(csv_path).is_file():
-            messagebox.showerror(
-                "Board Vision",
-                "Set the Lichess puzzle CSV path first (Database > Import from Lichess CSV...).",
-                parent=self.root,
-            )
+        csv_path = self.require_lichess_csv()
+        if csv_path is None:
             return
         self._board_vision_window = BoardVisionWindow(
             self.root,
@@ -733,6 +784,9 @@ class MainWindow:
         self._line_demonstrated = False
         self._visit_recorded = False
         self._solve_clock_start = None
+        self._carry_mistakes = 0
+        self._carry_aids = 0
+        self._refresh_arena_rating()
         self.user_store.set_ui(f"last_puzzle:{self.database.database_id}", puzzle.puzzle_id)
         self._skip_first_var.set(puzzle.skip_first_move)
         self._update_favorite_button()
@@ -762,6 +816,8 @@ class MainWindow:
             return
         if self.current_index <= 0:
             return
+        if not self._settle_current_arena_puzzle():
+            return
         self._user_notes.save_now()
         self.current_index -= 1
         self.load_current_puzzle()
@@ -769,7 +825,13 @@ class MainWindow:
     def next_puzzle(self) -> None:
         if self.database is None or self.database.count() == 0:
             return
-        if self.current_index >= self.database.count() - 1:
+        at_end = self.current_index >= self.database.count() - 1
+        if at_end and not self.arena_mode:
+            return
+        if not self._settle_current_arena_puzzle():
+            return
+        if at_end and self._arena_refill() <= 0:
+            self._status_var.set("No new puzzles available.")
             return
         self._user_notes.save_now()
         self.current_index += 1
@@ -786,7 +848,9 @@ class MainWindow:
             minvalue=1,
             maxvalue=self.database.count(),
         )
-        if number is None:
+        if number is None or number - 1 == self.current_index:
+            return
+        if not self._settle_current_arena_puzzle():
             return
         self._user_notes.save_now()
         self.current_index = number - 1
@@ -870,6 +934,7 @@ class MainWindow:
         self.engine_controller.analyse_if_running(chess.Board(threat_board.fen()), purpose="threat")
         self._ensure_engine_polling()
         if self.session is not None:
+            self._engaged = True
             self.session.record_aid_used()
         self._status_var.set("Looking for the opponent's threat...")
 
@@ -906,6 +971,7 @@ class MainWindow:
         new_mode = ControlOverlayMode.OFF if current is mode else mode
         board_view.set_control_overlay(new_mode)
         if current is ControlOverlayMode.OFF and self.session is not None:
+            self._engaged = True
             self.session.record_aid_used()
         self._status_var.set(on_message if new_mode is mode else "Insight overlay hidden.")
 
@@ -916,6 +982,7 @@ class MainWindow:
             return
         if self.session is None or self.session.expected_move is None:
             return
+        self._engaged = True
         self.session.record_aid_used()
         move = self.session.expected_move
         self._layout.board.show_hint_square(move.from_square)
@@ -1181,25 +1248,44 @@ class MainWindow:
         session = self.session
         puzzle = session.puzzle
         info = self._info_vars
-        total = self.database.count() if self.database is not None else 0
-        info["Puzzle"].set(f"{self.current_index + 1} / {total}")
-        info["Move"].set(f"{session.move_index} / {len(puzzle.moves)}")
-        self._move_progress.set(session.move_index / len(puzzle.moves) if puzzle.moves else 0.0)
+        kind = self.database.kind if self.database is not None else ""
+        display = info_display_for(kind, complete=session.is_complete)
+
+        position = str(self.current_index + 1)
+        if display.show_deck_total:
+            total = self.database.count() if self.database is not None else 0
+            position = f"{position} / {total}"
+        if display.show_rating and self._arena_rating is not None:
+            position = f"{position} — rating {round(self._arena_rating)}"
+        info["Puzzle"].set(position)
+
+        if display.show_move_progress:
+            info["Move"].set(f"{session.move_index} / {len(puzzle.moves)}")
+            self._move_progress.set(
+                session.move_index / len(puzzle.moves) if puzzle.moves else 0.0
+            )
+        else:
+            info["Move"].set(HIDDEN_TEXT)
+            self._move_progress.set(0.0)
+
         if session.is_complete:
             info["Turn"].set("✓ Solved")
         else:
             info["Turn"].set("○ White" if session.board.turn == chess.WHITE else "● Black")
         info["Side"].set("White" if session.player_color == chess.WHITE else "Black")
         info["Start"].set("Computer first" if puzzle.skip_first_move else "You first")
-        if puzzle.theme:
+
+        if not display.show_theme:
+            info["Theme"].set(HIDDEN_TEXT)
+        elif puzzle.theme:
             theme_progress = (
                 self.database.theme_position(self.current_index)
                 if self.database is not None
                 else None
             )
             if theme_progress is not None:
-                position, theme_total = theme_progress
-                info["Theme"].set(f"{puzzle.theme} [{position}/{theme_total}]")
+                theme_pos, theme_total = theme_progress
+                info["Theme"].set(f"{puzzle.theme} [{theme_pos}/{theme_total}]")
             else:
                 info["Theme"].set(puzzle.theme)
         else:
@@ -1217,7 +1303,10 @@ class MainWindow:
     def _maybe_auto_next(self) -> None:
         if self.database is None:
             return
-        if self._auto_next_var.get() and self.current_index < self.database.count() - 1:
+        # An arena has no fixed end: next_puzzle refills the deck when the
+        # last queued puzzle is done, so auto-next keeps the stream going.
+        at_end = self.current_index >= self.database.count() - 1
+        if self._auto_next_var.get() and (self.arena_mode or not at_end):
             self.root.after(AUTO_NEXT_DELAY_MS, self.next_puzzle)
 
     def _maybe_start_solve_clock(self) -> None:
@@ -1229,22 +1318,26 @@ class MainWindow:
     def _record_solve(self) -> None:
         if self._visit_recorded or self.session is None:
             return
+        mistakes = self.session.mistakes + self._carry_mistakes
+        aids = self.session.aids_used + self._carry_aids
         database_id, database_path = self._attempt_locator()
         self.user_store.record_attempt(
             Attempt(
                 puzzle_id=self.session.puzzle.puzzle_id,
                 at=now_iso(),
                 outcome="solved",
-                mistakes=self.session.mistakes,
-                aids=self.session.aids_used,
-                grade=grade_solve(self.session.mistakes, self.session.aids_used),
+                mistakes=mistakes,
+                aids=aids,
+                grade=grade_solve(mistakes, aids),
                 duration_ms=self._visit_duration_ms(),
                 database_id=database_id,
                 database_path=database_path,
+                puzzle_rating=puzzle_rating_of(self.session.puzzle),
             )
         )
         self._visit_recorded = True
         self._refresh_session_stats()
+        self._announce_arena_rating()
 
     def _finalize_visit(self) -> None:
         if self.session is None or self._visit_recorded or not self._engaged:
@@ -1257,16 +1350,120 @@ class MainWindow:
                 puzzle_id=self.session.puzzle.puzzle_id,
                 at=now_iso(),
                 outcome="gave_up",
-                mistakes=self.session.mistakes,
-                aids=self.session.aids_used,
+                mistakes=self.session.mistakes + self._carry_mistakes,
+                aids=self.session.aids_used + self._carry_aids,
                 grade="again",
                 duration_ms=self._visit_duration_ms(),
                 database_id=database_id,
                 database_path=database_path,
+                puzzle_rating=puzzle_rating_of(self.session.puzzle),
             )
         )
         self._visit_recorded = True
         self._refresh_session_stats()
+
+    # --- arena (rated session) support --------------------------------------
+
+    @property
+    def arena_mode(self) -> bool:
+        return (
+            self.database is not None
+            and not self.favorites_view
+            and self.database.kind == DECK_KIND_ARENA
+        )
+
+    def _refresh_arena_rating(self) -> None:
+        if not self.arena_mode:
+            self._arena_rating = None
+            return
+        assert self.database is not None
+        config = read_arena_config(self.database)
+        self._arena_rating = session_rating(
+            self.user_store.connection, self.database.database_id, config.start_rating
+        )
+
+    def _announce_arena_rating(self) -> None:
+        """After a rated solve: recompute and show the rating with its delta."""
+        if not self.arena_mode:
+            return
+        before = self._arena_rating
+        self._refresh_arena_rating()
+        if self._arena_rating is None:
+            return
+        delta = round(self._arena_rating) - round(before) if before is not None else 0
+        self._status_var.set(f"Puzzle complete — rating {round(self._arena_rating)} ({delta:+d})")
+        self._update_puzzle_info()
+
+    def _settle_current_arena_puzzle(self) -> bool:
+        """Settle the current rated puzzle before navigating away from it.
+
+        An engaged unfinished visit is finalized as a loss here -- before any
+        refill runs -- so the next batch is sampled at the post-loss rating
+        and an empty refill cannot drop the record (finalizing only in
+        load_current_puzzle would do both). An untouched, never-attempted
+        puzzle takes a deliberate give-up or a cancel -- never a free skip.
+        Completed or already-recorded visits, and untouched puzzles that were
+        attempted before (browsing history), pass through untouched."""
+        if not self.arena_mode or self.session is None:
+            return True
+        if self._visit_recorded or self.session.is_complete:
+            return True
+        assert self.database is not None
+        if not self._engaged:
+            attempted = self.user_store.deck_attempted_ids(self.database.database_id)
+            if self.session.puzzle.puzzle_id in attempted:
+                return True
+            if not messagebox.askyesno(
+                "Give up puzzle?",
+                "Leaving this puzzle unsolved counts as a rated loss. Give it up?",
+                parent=self.root,
+            ):
+                return False
+            self._engaged = True
+        self._finalize_visit()
+        self._refresh_arena_rating()
+        return True
+
+    def _arena_refill(self) -> int:
+        """Append the next rating-banded batch to the arena deck."""
+        assert self.database is not None
+        self.root.configure(cursor="watch")
+        self.root.update_idletasks()
+        try:
+            rating = self._arena_rating
+            if rating is None:
+                config = read_arena_config(self.database)
+                rating = float(config.start_rating)
+            return refill(self.database, rating)
+        except FileNotFoundError:
+            messagebox.showerror(
+                "Lichess CSV not found",
+                "The CSV file this session samples from is missing. The queued puzzles"
+                " still work; restore the CSV to get new ones.",
+                parent=self.root,
+            )
+            return 0
+        except Exception as exc:
+            messagebox.showerror("Could not fetch puzzles", str(exc), parent=self.root)
+            return 0
+        finally:
+            self.root.configure(cursor="")
+
+    def start_arena_session(self) -> None:
+        self._user_notes.save_now()
+        self._database.start_arena_session()
+
+    def continue_arena_session(self) -> None:
+        self._user_notes.save_now()
+        self._database.continue_arena_session()
+
+    def manage_arena_sessions(self) -> None:
+        self._user_notes.save_now()
+        self._database.manage_arena_sessions()
+
+    def review_arena_mistakes(self) -> None:
+        self._user_notes.save_now()
+        self._database.review_arena_mistakes()
 
     def _attempt_locator(self) -> tuple[str, str]:
         """Where the current puzzle's content lives, for the review queue.

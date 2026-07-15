@@ -2,6 +2,7 @@
 
 from chess_puzzles.store.clock import now_iso
 from chess_puzzles.store.content import (
+    DECK_KIND_ARENA,
     DECK_KIND_REPERTOIRE,
     DECK_KIND_TACTICS,
     ContentDatabase,
@@ -16,6 +17,7 @@ __all__ = [
     "ContentDatabase",
     "ContentMeta",
     "CourseLibrary",
+    "DECK_KIND_ARENA",
     "DECK_KIND_REPERTOIRE",
     "DECK_KIND_TACTICS",
     "FavoriteRef",

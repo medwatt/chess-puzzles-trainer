@@ -10,6 +10,7 @@ from tkinter import messagebox, simpledialog, ttk
 from chess_puzzles.dialogs.choice import ChoiceDialog
 from chess_puzzles.review import due_reviews
 from chess_puzzles.store import CourseLibrary, LibraryCourse
+from chess_puzzles.ui.table import autosize_columns
 
 
 class CourseLibraryDialog(tk.Toplevel):
@@ -43,12 +44,12 @@ class CourseLibraryDialog(tk.Toplevel):
         table_frame.pack(fill=tk.BOTH, expand=True)
         self._table = ttk.Treeview(table_frame, columns=self.COLUMNS, show="headings", selectmode="browse")
         headings = {
-            "course": ("Course", 300), "type": ("Type", 110), "status": ("Status", 95), "tags": ("Tags", 140),
-            "puzzles": ("Puzzles", 80), "attempts": ("Attempts", 100), "due": ("Due", 65),
+            "course": "Course", "type": "Type", "status": "Status", "tags": "Tags",
+            "puzzles": "Puzzles", "attempts": "Attempts", "due": "Due",
         }
-        for column, (label, width) in headings.items():
+        for column, label in headings.items():
             self._table.heading(column, text=label, command=lambda value=column: self._sort(value))
-            self._table.column(column, width=width, minwidth=55, stretch=column == "course")
+            self._table.column(column, minwidth=55, stretch=column == "course")
         y_scroll = ttk.Scrollbar(table_frame, orient=tk.VERTICAL, command=self._table.yview)
         x_scroll = ttk.Scrollbar(table_frame, orient=tk.HORIZONTAL, command=self._table.xview)
         self._table.configure(yscrollcommand=y_scroll.set, xscrollcommand=x_scroll.set)
@@ -79,6 +80,9 @@ class CourseLibraryDialog(tk.Toplevel):
         self.bind("<Escape>", lambda _event: self.destroy())
         search.focus_set()
         self._populate()
+        # Sized here and after rescans, not on every search keystroke:
+        # columns jumping while the user types would be worse than clipping.
+        autosize_columns(self._table)
         self.after_idle(self._rescan)
 
     def show(self) -> Path | None:
@@ -203,6 +207,7 @@ class CourseLibraryDialog(tk.Toplevel):
         finally:
             self.configure(cursor="")
         self._populate()
+        autosize_columns(self._table)
         self._status.set(
             f"{result.discovered} found; {result.indexed} updated; {result.invalid} unreadable"
         )

@@ -33,6 +33,9 @@ def test_assisted_user_move_then_leave_records_gave_up(tmp_path: Path) -> None:
     window._engaged = False
     window._visit_recorded = False
     window._solve_clock_start = None
+    window._carry_mistakes = 0
+    window._carry_aids = 0
+    window._arena_rating = None
     window.user_store = user_store
     window.favorites_view = False
     window.database = None

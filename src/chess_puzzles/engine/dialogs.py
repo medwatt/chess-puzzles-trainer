@@ -6,6 +6,7 @@ from tkinter import messagebox, ttk
 
 from chess_puzzles.constants import ENGINE_CONFIG_DIALOG_GEOMETRY
 from chess_puzzles.engine.config import EngineConfig, EngineDefinition, new_engine_definition
+from chess_puzzles.ui.table import autosize_columns
 
 
 class EngineConfigDialog(tk.Toplevel):
@@ -35,7 +36,7 @@ class EngineConfigDialog(tk.Toplevel):
         headings = {"default": "Default", "name": "Name", "command": "Command", "threads": "CPUs", "time": "Time", "depth": "Depth"}
         for column in self.COLUMNS:
             self.table.heading(column, text=headings[column])
-            self.table.column(column, width=110, stretch=column == "command")
+            self.table.column(column, stretch=column == "command")
         self.table.grid(row=0, column=0, sticky="nsew")
         frame.columnconfigure(0, weight=1)
         frame.rowconfigure(0, weight=1)
@@ -68,6 +69,7 @@ class EngineConfigDialog(tk.Toplevel):
                     engine.depth,
                 ),
             )
+        autosize_columns(self.table)
 
     def _selected_engine(self) -> EngineDefinition | None:
         selection = self.table.selection()

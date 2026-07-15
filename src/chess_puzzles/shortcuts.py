@@ -109,7 +109,7 @@ class MainShortcuts:
 
     # Application
     SHOW_SHORTCUTS = Shortcut("?", "Keyboard shortcuts", APPLICATION)
-    CONFIGURE_FOLDERS = Shortcut("<Control-Shift-D>", "Folders...", APPLICATION)
+    CONFIGURE_PATHS = Shortcut("<Control-Shift-D>", "Paths...", APPLICATION)
     EXIT = Shortcut("<Control-q>", "Quit", APPLICATION)
 
 

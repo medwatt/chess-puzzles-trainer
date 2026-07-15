@@ -99,6 +99,18 @@ CREATE INDEX IF NOT EXISTS idx_vision_at ON vision_attempt(at);
 """
 
 
+# Migration appended after LIBRARY_SCHEMA_SQL (see _USER_MIGRATIONS): stamps
+# the puzzle's difficulty on each attempt so the arena rating fold can replay
+# history without reopening content decks. NULL on attempts of unrated content
+# and on every attempt predating the migration; the fold ignores NULL rows.
+# The index serves both the fold (per-deck attempts in id order) and the
+# arena frontier query (has this puzzle been attempted in this deck?).
+ARENA_ATTEMPT_SQL = """
+ALTER TABLE attempt ADD COLUMN puzzle_rating INTEGER;
+CREATE INDEX IF NOT EXISTS idx_attempt_database_puzzle ON attempt(database_id, puzzle_id, id);
+"""
+
+
 LIBRARY_SCHEMA_SQL = """
 CREATE TABLE library_root (
     path      TEXT PRIMARY KEY,

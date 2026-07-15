@@ -18,11 +18,10 @@ DEFAULT_MINING_RATING_MAX = 1400
 class MiningDialogSettings:
     """Persisted defaults for the blunder-generation dialog.
 
-    ``csv_path`` empty means "use the Lichess import's CSV" -- the two
-    features share one database file unless the user points them apart.
+    The CSV path is not here: every CSV-consuming feature reads the shared
+    ``lichess_csv_path`` from AppSettings (Settings > Paths).
     """
 
-    csv_path: str = ""
     count: int = DEFAULT_MINING_COUNT
     rating_min: int = DEFAULT_MINING_RATING_MIN
     rating_max: int = DEFAULT_MINING_RATING_MAX
@@ -34,7 +33,6 @@ def load_mining_settings(path: str | Path = DEFAULT_MINING_SETTINGS_PATH) -> Min
         return MiningDialogSettings()
     data = load_json_object(settings_path, error_message="mining.json must contain a JSON object")
     return MiningDialogSettings(
-        csv_path=str(data.get("csv_path", "") or ""),
         count=_int_value(data, "count", DEFAULT_MINING_COUNT, 1, 10_000),
         rating_min=_int_value(data, "rating_min", DEFAULT_MINING_RATING_MIN, 0, 3000),
         rating_max=_int_value(data, "rating_max", DEFAULT_MINING_RATING_MAX, 0, 3000),
@@ -47,7 +45,6 @@ def save_mining_settings(
     save_json_object(
         path,
         {
-            "csv_path": settings.csv_path,
             "count": settings.count,
             "rating_min": settings.rating_min,
             "rating_max": settings.rating_max,

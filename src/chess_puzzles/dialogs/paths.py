@@ -1,32 +1,34 @@
 from __future__ import annotations
 
 import tkinter as tk
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from tkinter import filedialog, ttk
-from typing import Sequence
+from typing import Literal, Sequence
 
 
 @dataclass(frozen=True, slots=True)
-class FolderField:
-    """One user-configurable folder in the Folders dialog.
+class PathField:
+    """One user-configurable path in the Paths dialog.
 
-    To add a new folder setting, add one FolderField to the call site
-    and one key to AppSettings. The dialog handles the rest.
+    To add a new path setting, add one PathField to the call site and one
+    key to AppSettings. The dialog handles the rest.
     """
 
     key: str
     label: str
     description: str
     value: str = ""
+    kind: Literal["directory", "file"] = "directory"
+    filetypes: tuple[tuple[str, str], ...] = field(default_factory=tuple)
 
 
-class FoldersDialog(tk.Toplevel):
-    """Edit the app's user-configurable folders in one place."""
+class PathsDialog(tk.Toplevel):
+    """Edit every user-configurable path in one place."""
 
-    def __init__(self, parent: tk.Misc, fields: Sequence[FolderField]) -> None:
-        super().__init__(parent, name="folders", class_="ChessPuzzlesFolders")
-        self.title("Folders")
+    def __init__(self, parent: tk.Misc, fields: Sequence[PathField]) -> None:
+        super().__init__(parent, name="paths", class_="ChessPuzzlesPaths")
+        self.title("Paths")
         self.transient(parent)
         self.resizable(False, False)
         self.result: dict[str, str] | None = None
@@ -38,15 +40,15 @@ class FoldersDialog(tk.Toplevel):
         body.columnconfigure(1, weight=1)
 
         row = 0
-        for field in self._fields:
-            variable = tk.StringVar(value=field.value)
-            self._vars[field.key] = variable
-            ttk.Label(body, text=field.label).grid(row=row, column=0, sticky="w", padx=(0, 10), pady=(6, 0))
+        for path_field in self._fields:
+            variable = tk.StringVar(value=path_field.value)
+            self._vars[path_field.key] = variable
+            ttk.Label(body, text=path_field.label).grid(row=row, column=0, sticky="w", padx=(0, 10), pady=(6, 0))
             ttk.Entry(body, textvariable=variable, width=52).grid(row=row, column=1, sticky="ew", pady=(6, 0))
             ttk.Button(
                 body,
                 text="Browse...",
-                command=lambda var=variable, label=field.label: self._browse(var, label),
+                command=lambda var=variable, f=path_field: self._browse(var, f),
                 takefocus=False,
             ).grid(row=row, column=2, sticky="e", padx=(8, 0), pady=(6, 0))
             ttk.Button(
@@ -56,7 +58,7 @@ class FoldersDialog(tk.Toplevel):
                 takefocus=False,
             ).grid(row=row, column=3, sticky="e", padx=(4, 0), pady=(6, 0))
             row += 1
-            ttk.Label(body, text=field.description, style="Muted.TLabel", wraplength=520, justify=tk.LEFT).grid(
+            ttk.Label(body, text=path_field.description, style="Muted.TLabel", wraplength=520, justify=tk.LEFT).grid(
                 row=row, column=1, columnspan=3, sticky="w", pady=(2, 6)
             )
             row += 1
@@ -75,10 +77,19 @@ class FoldersDialog(tk.Toplevel):
         self.wait_window()
         return self.result
 
-    def _browse(self, variable: tk.StringVar, label: str) -> None:
-        current = variable.get().strip()
-        initialdir = current if current and Path(current).expanduser().is_dir() else str(Path.home())
-        path = filedialog.askdirectory(parent=self, title=label, initialdir=initialdir)
+    def _browse(self, variable: tk.StringVar, path_field: PathField) -> None:
+        current = Path(variable.get().strip()).expanduser() if variable.get().strip() else None
+        if path_field.kind == "file":
+            initialdir = current.parent if current is not None and current.parent.is_dir() else Path.home()
+            path = filedialog.askopenfilename(
+                parent=self,
+                title=path_field.label,
+                initialdir=str(initialdir),
+                filetypes=list(path_field.filetypes) or [("All files", "*")],
+            )
+        else:
+            initialdir = current if current is not None and current.is_dir() else Path.home()
+            path = filedialog.askdirectory(parent=self, title=path_field.label, initialdir=str(initialdir))
         if path:
             variable.set(path)
 

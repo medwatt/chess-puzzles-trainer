@@ -7,6 +7,7 @@ from chess_puzzles.constants import DATABASE_MANAGER_GEOMETRY
 from chess_puzzles.puzzle import Puzzle
 from chess_puzzles.shortcuts import MENU_ACCELERATORS, DatabaseShortcuts
 from chess_puzzles.store import ContentDatabase
+from chess_puzzles.ui.table import autosize_columns
 
 
 class DatabaseManagerDialog(tk.Toplevel):
@@ -134,7 +135,7 @@ class DatabaseManagerDialog(tk.Toplevel):
         }
         for column, (heading, numeric) in headings.items():
             self.table.heading(column, text=heading, command=lambda c=column, n=numeric: self._sort_by(c, n))
-            self.table.column(column, width=120, stretch=column in {"white", "black", "theme"})
+            self.table.column(column, stretch=column in {"white", "black", "theme"})
         y_scroll = ttk.Scrollbar(frame, orient=tk.VERTICAL, command=self.table.yview)
         self.table.configure(yscrollcommand=y_scroll.set)
         self.table.grid(row=0, column=0, sticky="nsew")
@@ -152,6 +153,7 @@ class DatabaseManagerDialog(tk.Toplevel):
     def _populate(self) -> None:
         for puzzle in self.database.iter_puzzles():
             self._insert_puzzle(puzzle)
+        autosize_columns(self.table)
         self.summary_var.set(self._summary_text(len(self.table.get_children())))
 
     def _insert_puzzle(self, puzzle: Puzzle) -> None:

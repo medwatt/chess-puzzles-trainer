@@ -24,7 +24,8 @@ def attempt_summary(
         clauses.append(f"puzzle_id IN ({','.join('?' for _ in ids)})")
         params.extend(ids)
     where = f" WHERE {' AND '.join(clauses)}" if clauses else ""
-    solved = "outcome = 'solved' AND mistakes = 0"
+    # Completing the line with hints/assisted moves is not solving it.
+    solved = "outcome = 'solved' AND mistakes = 0 AND aids = 0"
     row = conn.execute(
         "SELECT"
         " COUNT(*) AS attempted,"

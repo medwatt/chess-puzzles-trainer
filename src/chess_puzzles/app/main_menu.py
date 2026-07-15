@@ -80,6 +80,25 @@ class MainMenuBuilder:
         # (Database menu) and board utilities (Tools menu).
         training_menu = tk.Menu(menu_bar, tearoff=False)
         training_menu.add_command(
+            label="Start rated session...",
+            command=window.start_arena_session,
+        )
+        training_menu.add_command(
+            label="Continue rated session",
+            command=window.continue_arena_session,
+        )
+        training_menu.add_command(
+            label="Rated sessions...",
+            command=window.manage_arena_sessions,
+        )
+        # Historical first-try mistakes of the open session -- distinct from
+        # the due-review queue below, which is what currently needs training.
+        training_menu.add_command(
+            label="Session mistakes (rated)",
+            command=window.review_arena_mistakes,
+        )
+        training_menu.add_separator()
+        training_menu.add_command(
             label="Review mistakes (this deck)",
             accelerator=MENU_ACCELERATORS[MainShortcuts.REVIEW_DECK],
             command=window.review_mistakes_this_deck,
@@ -267,9 +286,9 @@ class MainMenuBuilder:
             command=window.toggle_play_sound,
         )
         settings_menu.add_command(
-            label="Folders...",
-            accelerator=MENU_ACCELERATORS[MainShortcuts.CONFIGURE_FOLDERS],
-            command=window.configure_folders,
+            label="Paths...",
+            accelerator=MENU_ACCELERATORS[MainShortcuts.CONFIGURE_PATHS],
+            command=window.configure_paths,
         )
         settings_menu.add_command(
             label="Choose font...",
@@ -350,7 +369,7 @@ class MainMenuBuilder:
             MainShortcuts.TOGGLE_CLEAN_COMMENTS: window.toggle_clean_comments,
             MainShortcuts.GO_TO_PUZZLE: window.go_to_puzzle,
             MainShortcuts.START_THEME: window.start_theme,
-            MainShortcuts.CONFIGURE_FOLDERS: window.configure_folders,
+            MainShortcuts.CONFIGURE_PATHS: window.configure_paths,
             MainShortcuts.CONFIGURE_ENGINES: window.configure_engines,
             MainShortcuts.TOGGLE_ENGINE_ANALYSIS: window.toggle_engine_analysis,
             MainShortcuts.PLAY_VS_ENGINE: window.open_engine_play_window,
