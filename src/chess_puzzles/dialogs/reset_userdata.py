@@ -6,6 +6,7 @@ import tkinter as tk
 from tkinter import messagebox, ttk
 
 from chess_puzzles.store import UserStore
+from chess_puzzles.ui.modal import run_modal
 from chess_puzzles.ui.table import autosize_columns
 from chess_puzzles.vision.registry import registry
 
@@ -46,8 +47,7 @@ class UserDataManagerDialog(tk.Toplevel):
         self.bind("<Escape>", lambda _event: self.destroy())
 
     def show(self) -> bool:
-        self.grab_set()
-        self.wait_window()
+        run_modal(self)
         return self.changed
 
     def _build_deck_tab(self, parent: ttk.Notebook, deck_name: str) -> ttk.Frame:

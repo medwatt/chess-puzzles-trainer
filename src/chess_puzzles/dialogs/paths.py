@@ -6,6 +6,8 @@ from pathlib import Path
 from tkinter import filedialog, ttk
 from typing import Literal, Sequence
 
+from chess_puzzles.ui.modal import run_modal
+
 
 @dataclass(frozen=True, slots=True)
 class PathField:
@@ -73,8 +75,7 @@ class PathsDialog(tk.Toplevel):
         self.protocol("WM_DELETE_WINDOW", self.destroy)
 
     def show_modal(self) -> dict[str, str] | None:
-        self.grab_set()
-        self.wait_window()
+        run_modal(self)
         return self.result
 
     def _browse(self, variable: tk.StringVar, path_field: PathField) -> None:

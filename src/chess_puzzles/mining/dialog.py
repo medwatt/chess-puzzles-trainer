@@ -9,6 +9,7 @@ from chess_puzzles.mining.settings import (
     MiningDialogSettings,
     load_mining_settings,
 )
+from chess_puzzles.ui.modal import run_modal
 
 
 @dataclass(slots=True, frozen=True)
@@ -88,8 +89,7 @@ class BlunderMineDialog(tk.Toplevel):
         self.bind("<Escape>", lambda _event: self.destroy())
 
     def show_modal(self) -> BlunderMineOptions | None:
-        self.grab_set()
-        self.wait_window()
+        run_modal(self)
         return self.result
 
     def _build_slider_row(

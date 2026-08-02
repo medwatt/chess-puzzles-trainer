@@ -8,6 +8,7 @@ from tkinter import messagebox, ttk
 
 from chess_puzzles.arena.service import ArenaSummary, list_sessions
 from chess_puzzles.ui.table import autosize_columns
+from chess_puzzles.ui.modal import run_modal
 
 
 class ArenaSessionsDialog(tk.Toplevel):
@@ -79,8 +80,7 @@ class ArenaSessionsDialog(tk.Toplevel):
         self._populate()
 
     def show(self) -> Path | None:
-        self.grab_set()
-        self.wait_window()
+        run_modal(self)
         return self.result
 
     def _populate(self) -> None:

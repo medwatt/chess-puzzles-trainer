@@ -19,6 +19,7 @@ from chess_puzzles.pgn.repertoire import (
     CourseProfile,
     ImportChoices,
 )
+from chess_puzzles.ui.modal import run_modal
 
 
 _NO_CHAPTER_LABEL = "(none — one chapter per game)"
@@ -84,8 +85,7 @@ class RepertoireImportDialog(tk.Toplevel):
         self.bind("<Escape>", lambda _event: self.destroy())
 
     def show_modal(self) -> ImportChoices | None:
-        self.grab_set()
-        self.wait_window()
+        run_modal(self)
         return self.result
 
     def _side_evidence(self) -> str:

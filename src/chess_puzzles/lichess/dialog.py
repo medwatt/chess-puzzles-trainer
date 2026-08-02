@@ -16,6 +16,7 @@ from chess_puzzles.lichess.settings import (
 from chess_puzzles.lichess.themes import LICHESS_THEMES
 from chess_puzzles.settings.theme_repository import UiTheme
 from chess_puzzles.ui.theme_selector import ThemeSelector
+from chess_puzzles.ui.modal import run_modal
 
 
 @dataclass(slots=True, frozen=True)
@@ -104,8 +105,7 @@ class LichessImportDialog(tk.Toplevel):
         self._sync_slider_labels()
 
     def show_modal(self) -> LichessImportOptions | None:
-        self.grab_set()
-        self.wait_window()
+        run_modal(self)
         return self.result
 
     def _build_source_row(self, parent: ttk.Frame) -> None:

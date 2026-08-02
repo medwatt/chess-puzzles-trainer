@@ -19,6 +19,7 @@ from tkinter import messagebox, ttk
 import chess.engine
 
 from chess_puzzles.mining.blunder_miner import BlunderMiner, MinedPuzzle, MiningCriteria
+from chess_puzzles.ui.modal import run_modal
 
 
 _POLL_MS = 100
@@ -66,8 +67,7 @@ class MiningRunDialog(tk.Toplevel):
         self.after(_POLL_MS, self._poll)
 
     def show_modal(self) -> list[MinedPuzzle] | None:
-        self.grab_set()
-        self.wait_window()
+        run_modal(self)
         return self.result
 
     def _cancel(self) -> None:

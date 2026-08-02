@@ -6,6 +6,7 @@ from tkinter import messagebox, ttk
 
 from chess_puzzles.constants import ENGINE_CONFIG_DIALOG_GEOMETRY
 from chess_puzzles.engine.config import EngineConfig, EngineDefinition, new_engine_definition
+from chess_puzzles.ui.modal import run_modal
 from chess_puzzles.ui.table import autosize_columns
 
 
@@ -25,8 +26,7 @@ class EngineConfigDialog(tk.Toplevel):
         self.protocol("WM_DELETE_WINDOW", self._cancel)
 
     def show_modal(self) -> EngineConfig | None:
-        self.grab_set()
-        self.wait_window()
+        run_modal(self)
         return self.result
 
     def _build_table(self) -> None:
@@ -52,7 +52,7 @@ class EngineConfigDialog(tk.Toplevel):
         ttk.Button(footer, text="Cancel", command=self._cancel).pack(side=tk.RIGHT)
         ttk.Button(footer, text="OK", command=self._accept).pack(side=tk.RIGHT, padx=(0, 6))
 
-    def _populate(self) -> None:
+    def _populate(self, select_id: str | None = None) -> None:
         for item in self.table.get_children():
             self.table.delete(item)
         for engine in self.config_data.engines:
@@ -70,6 +70,11 @@ class EngineConfigDialog(tk.Toplevel):
                 ),
             )
         autosize_columns(self.table)
+        # Re-inserting the rows drops the selection, which would silently turn
+        # the next Edit/Delete/Set as Default click into a no-op.
+        rows = self.table.get_children()
+        if rows:
+            self.table.selection_set(select_id if select_id in rows else rows[0])
 
     def _selected_engine(self) -> EngineDefinition | None:
         selection = self.table.selection()
@@ -85,7 +90,7 @@ class EngineConfigDialog(tk.Toplevel):
         engines = (*self.config_data.engines, engine)
         default_id = self.config_data.default_engine_id or engine.engine_id
         self.config_data = EngineConfig(engines=engines, default_engine_id=default_id)
-        self._populate()
+        self._populate(engine.engine_id)
 
     def _edit_selected(self) -> None:
         engine = self._selected_engine()
@@ -98,7 +103,7 @@ class EngineConfigDialog(tk.Toplevel):
             self.config_data,
             engines=tuple(updated if item.engine_id == engine.engine_id else item for item in self.config_data.engines),
         )
-        self._populate()
+        self._populate(updated.engine_id)
 
     def _delete_selected(self) -> None:
         engine = self._selected_engine()
@@ -116,7 +121,7 @@ class EngineConfigDialog(tk.Toplevel):
         if engine is None:
             return
         self.config_data = replace(self.config_data, default_engine_id=engine.engine_id)
-        self._populate()
+        self._populate(engine.engine_id)
 
     def _accept(self) -> None:
         self.result = self.config_data
@@ -152,10 +157,10 @@ class EngineEditDialog(tk.Toplevel):
         footer.pack(fill=tk.X, padx=12, pady=(0, 12))
         ttk.Button(footer, text="Cancel", command=self._cancel).pack(side=tk.RIGHT)
         ttk.Button(footer, text="OK", command=self._accept).pack(side=tk.RIGHT, padx=(0, 6))
+        self.protocol("WM_DELETE_WINDOW", self._cancel)
 
     def show_modal(self) -> EngineDefinition | None:
-        self.grab_set()
-        self.wait_window()
+        run_modal(self)
         return self.result
 
     def _entry(self, parent: ttk.Frame, label: str, variable: tk.StringVar, row: int, width: int = 32) -> None:

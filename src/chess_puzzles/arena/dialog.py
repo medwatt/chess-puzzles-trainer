@@ -9,6 +9,7 @@ from chess_puzzles.lichess.settings import load_lichess_settings
 from chess_puzzles.lichess.themes import LICHESS_THEMES
 from chess_puzzles.settings.theme_repository import UiTheme
 from chess_puzzles.ui.theme_selector import ThemeSelector
+from chess_puzzles.ui.modal import run_modal
 
 
 class ArenaStartDialog(tk.Toplevel):
@@ -72,8 +73,7 @@ class ArenaStartDialog(tk.Toplevel):
         self.bind("<Escape>", lambda _event: self.destroy())
 
     def show_modal(self) -> ArenaConfig | None:
-        self.grab_set()
-        self.wait_window()
+        run_modal(self)
         return self.result
 
     def _accept(self) -> None:

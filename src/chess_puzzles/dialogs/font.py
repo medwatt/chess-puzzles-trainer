@@ -5,6 +5,7 @@ from tkinter import font, ttk
 
 from chess_puzzles.constants import FONT_DIALOG_GEOMETRY
 from chess_puzzles.settings.model import AppSettings
+from chess_puzzles.ui.modal import run_modal
 
 
 FONT_STYLE_LABELS = {
@@ -73,8 +74,7 @@ class FontChooserDialog(tk.Toplevel):
         self.bind("<Escape>", lambda _event: self.destroy())
 
     def show_modal(self) -> tuple[str, str, int] | None:
-        self.grab_set()
-        self.wait_window()
+        run_modal(self)
         return self.result
 
     def _family_selected(self, _event: tk.Event) -> None:

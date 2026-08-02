@@ -10,6 +10,7 @@ from chess_puzzles.reports import AttemptSummary, attempt_summary, deck_summarie
 from chess_puzzles.ui.table import autosize_columns
 from chess_puzzles.vision.registry import registry
 from chess_puzzles.vision.stats import vision_summary
+from chess_puzzles.ui.modal import run_modal
 
 
 class StatisticsDialog(tk.Toplevel):
@@ -87,8 +88,7 @@ class StatisticsDialog(tk.Toplevel):
         return frame
 
     def show(self) -> None:
-        self.grab_set()
-        self.wait_window()
+        run_modal(self)
 
 
 def _tree(parent: tk.Misc, columns: tuple[tuple[str, str], ...]) -> ttk.Treeview:

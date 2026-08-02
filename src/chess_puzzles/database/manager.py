@@ -8,6 +8,7 @@ from chess_puzzles.puzzle import Puzzle
 from chess_puzzles.shortcuts import MENU_ACCELERATORS, DatabaseShortcuts
 from chess_puzzles.store import ContentDatabase
 from chess_puzzles.ui.table import autosize_columns
+from chess_puzzles.ui.modal import run_modal
 
 
 class DatabaseManagerDialog(tk.Toplevel):
@@ -49,8 +50,7 @@ class DatabaseManagerDialog(tk.Toplevel):
             self.bind(sequence, lambda _event, callback=action: (callback(), "break")[1])
 
     def show_modal(self) -> bool:
-        self.grab_set()
-        self.wait_window()
+        run_modal(self)
         return self.accepted
 
     def accept(self) -> None:

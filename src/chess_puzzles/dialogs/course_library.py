@@ -11,6 +11,7 @@ from chess_puzzles.dialogs.choice import ChoiceDialog
 from chess_puzzles.review import due_reviews
 from chess_puzzles.store import CourseLibrary, LibraryCourse
 from chess_puzzles.ui.table import autosize_columns
+from chess_puzzles.ui.modal import run_modal
 
 
 class CourseLibraryDialog(tk.Toplevel):
@@ -86,8 +87,7 @@ class CourseLibraryDialog(tk.Toplevel):
         self.after_idle(self._rescan)
 
     def show(self) -> Path | None:
-        self.grab_set()
-        self.wait_window()
+        run_modal(self)
         return self.result
 
     def _statistics(self) -> tuple[dict[str, int], dict[str, int]]:

@@ -3,6 +3,8 @@ from __future__ import annotations
 import tkinter as tk
 from tkinter import ttk
 
+from chess_puzzles.ui.modal import run_modal
+
 
 class ChoiceDialog(tk.Toplevel):
     def __init__(self, parent: tk.Misc, title: str, label: str, choices: list[str], default: str | None = None) -> None:
@@ -28,8 +30,7 @@ class ChoiceDialog(tk.Toplevel):
         self.bind("<Escape>", lambda _event: self.destroy())
 
     def show_modal(self) -> str | None:
-        self.grab_set()
-        self.wait_window()
+        run_modal(self)
         return self.result
 
     def _accept(self) -> None:
