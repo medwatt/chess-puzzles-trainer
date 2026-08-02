@@ -9,6 +9,7 @@ from chess_puzzles.shortcuts import MENU_ACCELERATORS, DatabaseShortcuts
 from chess_puzzles.store import ContentDatabase
 from chess_puzzles.ui.table import autosize_columns
 from chess_puzzles.ui.modal import run_modal
+from chess_puzzles.ui.window import fit_window
 
 
 class DatabaseManagerDialog(tk.Toplevel):
@@ -19,7 +20,6 @@ class DatabaseManagerDialog(tk.Toplevel):
         self.database = database
         self.new_name: str | None = None
         self.title(f"Course Editor - {database.meta.name}")
-        self.geometry(DATABASE_MANAGER_GEOMETRY)
         self.transient(parent)
         self.accepted = False
         self.summary_var = tk.StringVar(value=self._summary_text(database.count()))
@@ -33,6 +33,7 @@ class DatabaseManagerDialog(tk.Toplevel):
         self._populate()
         self._bind_shortcuts()
         self.protocol("WM_DELETE_WINDOW", self.reject)
+        fit_window(self, DATABASE_MANAGER_GEOMETRY)
 
     def _bind_shortcuts(self) -> None:
         bindings = {

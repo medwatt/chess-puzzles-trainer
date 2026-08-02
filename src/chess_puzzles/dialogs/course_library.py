@@ -7,11 +7,13 @@ import tkinter as tk
 from pathlib import Path
 from tkinter import messagebox, simpledialog, ttk
 
+from chess_puzzles.constants import COURSE_LIBRARY_DIALOG_GEOMETRY
 from chess_puzzles.dialogs.choice import ChoiceDialog
 from chess_puzzles.review import due_reviews
 from chess_puzzles.store import CourseLibrary, LibraryCourse
-from chess_puzzles.ui.table import autosize_columns
 from chess_puzzles.ui.modal import run_modal
+from chess_puzzles.ui.table import autosize_columns
+from chess_puzzles.ui.window import fit_window
 
 
 class CourseLibraryDialog(tk.Toplevel):
@@ -21,8 +23,6 @@ class CourseLibraryDialog(tk.Toplevel):
         super().__init__(parent, name="courselibrary", class_="ChessPuzzlesCourseLibrary")
         self.title("Course Library")
         self.transient(parent)
-        self.geometry("1050x620")
-        self.minsize(760, 440)
         self._library = library
         self._connection = connection
         self.result: Path | None = None
@@ -85,6 +85,7 @@ class CourseLibraryDialog(tk.Toplevel):
         # columns jumping while the user types would be worse than clipping.
         autosize_columns(self._table)
         self.after_idle(self._rescan)
+        fit_window(self, COURSE_LIBRARY_DIALOG_GEOMETRY)
 
     def show(self) -> Path | None:
         run_modal(self)

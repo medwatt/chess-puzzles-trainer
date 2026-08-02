@@ -12,11 +12,12 @@ import chess.pgn
 from chess_puzzles.board import BoardPresenter, BoardShortcuts, BoardView
 from chess_puzzles.board.annotations import BoardAnnotations
 from chess_puzzles.board.board_state import BoardCapabilities
-from chess_puzzles.constants import PGN_VIEWER_GEOMETRY, PGN_VIEWER_MINSIZE
+from chess_puzzles.constants import PGN_VIEWER_GEOMETRY
 from chess_puzzles.pgn.comments import ParsedComment, parse_comment
 from chess_puzzles.puzzle import Puzzle
 from chess_puzzles.settings.theme_repository import UiTheme
 from chess_puzzles.shortcuts import guarded_shortcut
+from chess_puzzles.ui.window import fit_window
 
 
 _VARIATION_INDENT_PX = 22
@@ -48,8 +49,6 @@ class PgnViewer(tk.Toplevel):
     ) -> None:
         super().__init__(parent, name="pgnviewer", class_="ChessPuzzlesPgnViewer")
         self.title(f"PGN - {puzzle.title}")
-        self.geometry(PGN_VIEWER_GEOMETRY)
-        self.minsize(*PGN_VIEWER_MINSIZE)
         # Modeless work window: keep native minimize/maximize controls.
         self._theme = theme
         self.game = chess.pgn.read_game(io.StringIO(pgn_text))
@@ -131,6 +130,7 @@ class PgnViewer(tk.Toplevel):
 
         self._render()
         self.go_start()
+        fit_window(self, PGN_VIEWER_GEOMETRY)
 
     def _on_destroy(self, event: tk.Event) -> None:
         if event.widget is self:

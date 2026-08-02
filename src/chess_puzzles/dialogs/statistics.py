@@ -6,11 +6,13 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from tkinter import ttk
 
+from chess_puzzles.constants import STATISTICS_DIALOG_GEOMETRY
 from chess_puzzles.reports import AttemptSummary, attempt_summary, deck_summaries, format_duration_ms
+from chess_puzzles.ui.modal import run_modal
 from chess_puzzles.ui.table import autosize_columns
+from chess_puzzles.ui.window import fit_window
 from chess_puzzles.vision.registry import registry
 from chess_puzzles.vision.stats import vision_summary
-from chess_puzzles.ui.modal import run_modal
 
 
 class StatisticsDialog(tk.Toplevel):
@@ -18,8 +20,6 @@ class StatisticsDialog(tk.Toplevel):
         super().__init__(parent, name="statistics", class_="ChessPuzzlesStatistics")
         self.title("Training Statistics")
         self.transient(parent)
-        self.geometry("720x460")
-        self.minsize(620, 400)
 
         notebook = ttk.Notebook(self)
         notebook.pack(fill=tk.BOTH, expand=True, padx=12, pady=(12, 6))
@@ -30,6 +30,7 @@ class StatisticsDialog(tk.Toplevel):
         footer.pack(fill=tk.X, padx=12, pady=(6, 12))
         ttk.Button(footer, text="Close", command=self.destroy).pack(side=tk.RIGHT)
         self.bind("<Escape>", lambda _event: self.destroy())
+        fit_window(self, STATISTICS_DIALOG_GEOMETRY)
 
     def _overview(self, parent: ttk.Notebook, connection: sqlite3.Connection) -> ttk.Frame:
         frame = ttk.Frame(parent, padding=12)

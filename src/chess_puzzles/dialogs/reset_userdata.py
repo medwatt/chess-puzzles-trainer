@@ -5,9 +5,11 @@ from __future__ import annotations
 import tkinter as tk
 from tkinter import messagebox, ttk
 
+from chess_puzzles.constants import USER_DATA_MANAGER_GEOMETRY
 from chess_puzzles.store import UserStore
 from chess_puzzles.ui.modal import run_modal
 from chess_puzzles.ui.table import autosize_columns
+from chess_puzzles.ui.window import fit_window
 from chess_puzzles.vision.registry import registry
 
 
@@ -24,8 +26,6 @@ class UserDataManagerDialog(tk.Toplevel):
         super().__init__(parent, name="userdatamanager", class_="ChessPuzzlesUserDataManager")
         self.title("Manage User Data")
         self.transient(parent)
-        self.geometry("650x430")
-        self.minsize(560, 380)
         self._store = store
         self._database_id = database_id
         self._is_arena = is_arena
@@ -45,6 +45,7 @@ class UserDataManagerDialog(tk.Toplevel):
         footer.pack(fill=tk.X, padx=12, pady=(6, 12))
         ttk.Button(footer, text="Close", command=self.destroy).pack(side=tk.RIGHT)
         self.bind("<Escape>", lambda _event: self.destroy())
+        fit_window(self, USER_DATA_MANAGER_GEOMETRY)
 
     def show(self) -> bool:
         run_modal(self)

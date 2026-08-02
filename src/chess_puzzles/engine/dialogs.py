@@ -8,6 +8,7 @@ from chess_puzzles.constants import ENGINE_CONFIG_DIALOG_GEOMETRY
 from chess_puzzles.engine.config import EngineConfig, EngineDefinition, new_engine_definition
 from chess_puzzles.ui.modal import run_modal
 from chess_puzzles.ui.table import autosize_columns
+from chess_puzzles.ui.window import fit_window
 
 
 class EngineConfigDialog(tk.Toplevel):
@@ -16,7 +17,6 @@ class EngineConfigDialog(tk.Toplevel):
     def __init__(self, parent: tk.Misc, config: EngineConfig) -> None:
         super().__init__(parent, name="engineconfig", class_="ChessPuzzlesEngineConfig")
         self.title("Configure Engines")
-        self.geometry(ENGINE_CONFIG_DIALOG_GEOMETRY)
         self.transient(parent)
         self.config_data = config
         self.result: EngineConfig | None = None
@@ -24,6 +24,7 @@ class EngineConfigDialog(tk.Toplevel):
         self._build_buttons()
         self._populate()
         self.protocol("WM_DELETE_WINDOW", self._cancel)
+        fit_window(self, ENGINE_CONFIG_DIALOG_GEOMETRY)
 
     def show_modal(self) -> EngineConfig | None:
         run_modal(self)

@@ -24,9 +24,10 @@ from chess_puzzles.board import (
 )
 from chess_puzzles.board.annotations import SquareAnnotation
 from chess_puzzles.board.input import BoardEvent, SquareSelected
-from chess_puzzles.constants import VISION_WINDOW_GEOMETRY, VISION_WINDOW_MINSIZE
+from chess_puzzles.constants import VISION_WINDOW_GEOMETRY
 from chess_puzzles.platform.audio import AudioPlayer
 from chess_puzzles.store import UserStore, VisionAttempt, now_iso
+from chess_puzzles.ui.window import fit_window
 from chess_puzzles.vision.drill import TrialResult, shows_coordinates
 from chess_puzzles.vision.options_panel import OptionsPanel
 from chess_puzzles.vision.registry import registry
@@ -74,8 +75,6 @@ class BoardVisionWindow(tk.Toplevel):
     ) -> None:
         super().__init__(parent, name="boardvision", class_="ChessPuzzlesBoardVision")
         self.title("Board Vision")
-        self.minsize(*VISION_WINDOW_MINSIZE)
-        self.geometry(VISION_WINDOW_GEOMETRY)
         # Modeless work window: keep native minimize/maximize controls.
 
         self._presenter = presenter
@@ -105,6 +104,7 @@ class BoardVisionWindow(tk.Toplevel):
         self.protocol("WM_DELETE_WINDOW", self.close)
         self.bind("<Destroy>", self._on_destroy)
         self.bind("<space>", lambda _event: self._primary_action())
+        fit_window(self, VISION_WINDOW_GEOMETRY)
 
     # UI ---------------------------------------------------------------
     def _build_ui(self) -> None:

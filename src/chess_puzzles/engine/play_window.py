@@ -12,13 +12,13 @@ from chess_puzzles.constants import (
     COMPUTER_REPLY_DELAY_MS,
     ENGINE_POLL_INTERVAL_MS,
     PLAY_WINDOW_GEOMETRY,
-    PLAY_WINDOW_MINSIZE,
 )
 from chess_puzzles.engine.board_analysis_frame import BoardAnalysisFrame
 from chess_puzzles.engine.config import EngineDefinition
 from chess_puzzles.engine.play_controller import EnginePlayController
 from chess_puzzles.engine.play_session import EnginePlaySession
 from chess_puzzles.platform.audio import AudioPlayer
+from chess_puzzles.ui.window import fit_window
 
 
 class EnginePlayWindow(tk.Toplevel):
@@ -38,8 +38,6 @@ class EnginePlayWindow(tk.Toplevel):
     ) -> None:
         super().__init__(parent, name="engineplay", class_="ChessPuzzlesEnginePlay")
         self.title(f"Play vs Engine - {title}")
-        self.minsize(*PLAY_WINDOW_MINSIZE)
-        self.geometry(PLAY_WINDOW_GEOMETRY)
         # Modeless work window: keep native minimize/maximize controls.
         self._presenter = presenter
         self._audio = audio
@@ -90,6 +88,7 @@ class EnginePlayWindow(tk.Toplevel):
         if not self.session.is_human_turn:
             self._schedule_engine_move()
         self.after(ENGINE_POLL_INTERVAL_MS, self._poll_engine_results)
+        fit_window(self, PLAY_WINDOW_GEOMETRY)
 
     def reset_position(self) -> None:
         self.session.reset()

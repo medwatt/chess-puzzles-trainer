@@ -39,19 +39,21 @@ EVAL_BAR_CLAMP_CP: int = 1000
 MATE_BAR_CP: int = 1200
 
 
-# Window geometry (Tk geometry strings or (w, h) tuples)
+# Preferred window geometry (Tk geometry strings or (w, h) tuples). fit_window
+# treats these as a lower bound only: a window never opens smaller than the size
+# its own widgets ask for, so these stay honest at any application font size.
 MAIN_WINDOW_MINSIZE: tuple[int, int] = (900, 620)
 PGN_VIEWER_GEOMETRY: str = "1180x640"
-PGN_VIEWER_MINSIZE: tuple[int, int] = (860, 520)
 PLAY_WINDOW_GEOMETRY: str = "860x860"
-PLAY_WINDOW_MINSIZE: tuple[int, int] = (860, 860)
 # Wider than tall: the board shares the width with the sidebar, so a near-square
 # board cell needs the window short enough to not leave vertical dead space.
 VISION_WINDOW_GEOMETRY: str = "880x660"
-VISION_WINDOW_MINSIZE: tuple[int, int] = (740, 560)
 ENGINE_CONFIG_DIALOG_GEOMETRY: str = "760x420"
 FONT_DIALOG_GEOMETRY: str = "460x420"
 DATABASE_MANAGER_GEOMETRY: str = "980x600"
+STATISTICS_DIALOG_GEOMETRY: str = "720x460"
+COURSE_LIBRARY_DIALOG_GEOMETRY: str = "1050x620"
+USER_DATA_MANAGER_GEOMETRY: str = "650x430"
 
 
 # App defaults

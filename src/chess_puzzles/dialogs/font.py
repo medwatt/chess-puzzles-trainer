@@ -6,6 +6,7 @@ from tkinter import font, ttk
 from chess_puzzles.constants import FONT_DIALOG_GEOMETRY
 from chess_puzzles.settings.model import AppSettings
 from chess_puzzles.ui.modal import run_modal
+from chess_puzzles.ui.window import fit_window
 
 
 FONT_STYLE_LABELS = {
@@ -21,7 +22,6 @@ class FontChooserDialog(tk.Toplevel):
         super().__init__(parent, name="fontchooser", class_="ChessPuzzlesFontChooser")
         self.title("Choose font")
         self.transient(parent)
-        self.geometry(FONT_DIALOG_GEOMETRY)
         self.result: tuple[str, str, int] | None = None
 
         current_family = settings.font_family or font.nametofont("TkDefaultFont").actual("family")
@@ -72,6 +72,7 @@ class FontChooserDialog(tk.Toplevel):
         ttk.Button(footer, text="OK", command=self._accept).pack(side=tk.RIGHT, padx=(0, 6))
         self.bind("<Return>", lambda _event: self._accept())
         self.bind("<Escape>", lambda _event: self.destroy())
+        fit_window(self, FONT_DIALOG_GEOMETRY)
 
     def show_modal(self) -> tuple[str, str, int] | None:
         run_modal(self)
