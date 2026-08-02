@@ -66,8 +66,11 @@ class FakeVar:
 
 
 class FakeAudio:
-    def play_move(self, *_args) -> None:
-        pass
+    def __init__(self) -> None:
+        self.moves: list[chess.Move] = []
+
+    def play_move(self, _board_before, move, _board_after) -> None:
+        self.moves.append(move)
 
 
 class FakeLayout:
@@ -125,6 +128,7 @@ def test_playback_pauses_on_prose_and_rewinds_to_decision_point() -> None:
     window.root.fire()  # 2. g4, silent -> timer
     window.root.fire()  # 2...Qh4#, final step
     assert [m.uci() for m in board_view.moves] == ["f2f3", "e7e5", "g2g4", "d8h4"]
+    assert window.audio.moves == board_view.moves
     assert "mate" in window.comment_text
     assert "try again" in window._status_var.value
     assert window.root.pending == {}  # final position always waits

@@ -284,6 +284,7 @@ class MainWindow:
             self._finalize_visit()
             self.user_store.close()
             self.engine_controller.shutdown()
+            self.audio.close()
             self.settings_repository.save(self.state.settings)
         finally:
             self.root.destroy()
