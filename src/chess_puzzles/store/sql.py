@@ -111,6 +111,16 @@ CREATE INDEX IF NOT EXISTS idx_attempt_database_puzzle ON attempt(database_id, p
 """
 
 
+# Migration appended after ARENA_ATTEMPT_SQL (see _USER_MIGRATIONS): stamps
+# the puzzle's solution length on each attempt so the review scheduler can
+# judge solve speed against the length of what was solved, without reopening
+# content decks. NULL on attempts predating this migration, which fall back
+# to the flat threshold they were graded by.
+ATTEMPT_LENGTH_SQL = """
+ALTER TABLE attempt ADD COLUMN solution_plies INTEGER;
+"""
+
+
 LIBRARY_SCHEMA_SQL = """
 CREATE TABLE library_root (
     path      TEXT PRIMARY KEY,

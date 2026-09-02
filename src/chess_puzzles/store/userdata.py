@@ -9,6 +9,7 @@ from chess_puzzles.store.clock import now_iso
 from chess_puzzles.store.library import CourseLibrary
 from chess_puzzles.store.sql import (
     ARENA_ATTEMPT_SQL,
+    ATTEMPT_LENGTH_SQL,
     ATTEMPT_LOCATOR_SQL,
     LIBRARY_SCHEMA_SQL,
     USER_SCHEMA_SQL,
@@ -24,6 +25,7 @@ _USER_MIGRATIONS: tuple[str, ...] = (
     ATTEMPT_LOCATOR_SQL,
     LIBRARY_SCHEMA_SQL,
     ARENA_ATTEMPT_SQL,
+    ATTEMPT_LENGTH_SQL,
 )
 
 
@@ -52,6 +54,9 @@ class Attempt:
     # The puzzle's difficulty at attempt time (lichess Rating header), so the
     # arena rating fold never needs the content deck. None for unrated content.
     puzzle_rating: int | None = None
+    # How long the solution was, so the scheduler can judge solve speed
+    # against it. None on attempts predating the column.
+    solution_plies: int | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -115,8 +120,9 @@ class UserStore:
         with self._conn:
             self._conn.execute(
                 "INSERT INTO attempt"
-                " (puzzle_id, at, outcome, mistakes, aids, duration_ms, grade, database_id, database_path, puzzle_rating)"
-                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                " (puzzle_id, at, outcome, mistakes, aids, duration_ms, grade, database_id,"
+                " database_path, puzzle_rating, solution_plies)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     a.puzzle_id,
                     a.at,
@@ -128,6 +134,7 @@ class UserStore:
                     a.database_id,
                     a.database_path,
                     a.puzzle_rating,
+                    a.solution_plies,
                 ),
             )
 

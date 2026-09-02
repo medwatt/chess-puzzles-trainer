@@ -41,7 +41,7 @@ def due_reviews(
     """
     now = now or datetime.now(UTC)
     rows = conn.execute(
-        "SELECT puzzle_id, at, grade, duration_ms, database_id, database_path"
+        "SELECT puzzle_id, at, grade, duration_ms, solution_plies, database_id, database_path"
         " FROM attempt ORDER BY puzzle_id, at, id"
     ).fetchall()
     due: list[DueReview] = []
@@ -49,7 +49,9 @@ def due_reviews(
         history: list[Rep] = []
         locator_id = locator_path = ""
         for row in group:
-            history.append(Rep(_parse_at(row["at"]), row["grade"], row["duration_ms"]))
+            history.append(
+                Rep(_parse_at(row["at"]), row["grade"], row["duration_ms"], row["solution_plies"])
+            )
             if row["database_path"]:
                 locator_id, locator_path = row["database_id"], row["database_path"]
         when = next_due(history)

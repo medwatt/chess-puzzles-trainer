@@ -1337,6 +1337,7 @@ class MainWindow:
                 database_id=database_id,
                 database_path=database_path,
                 puzzle_rating=puzzle_rating_of(self.session.puzzle),
+                solution_plies=len(self.session.puzzle.moves),
             )
         )
         self._visit_recorded = True
@@ -1361,6 +1362,7 @@ class MainWindow:
                 database_id=database_id,
                 database_path=database_path,
                 puzzle_rating=puzzle_rating_of(self.session.puzzle),
+                solution_plies=len(self.session.puzzle.moves),
             )
         )
         self._visit_recorded = True
