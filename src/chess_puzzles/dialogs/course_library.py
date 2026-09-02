@@ -19,12 +19,22 @@ from chess_puzzles.ui.window import fit_window
 class CourseLibraryDialog(tk.Toplevel):
     COLUMNS = ("course", "type", "status", "tags", "puzzles", "attempts", "due")
 
-    def __init__(self, parent: tk.Misc, library: CourseLibrary, connection: sqlite3.Connection) -> None:
+    def __init__(
+        self,
+        parent: tk.Misc,
+        library: CourseLibrary,
+        connection: sqlite3.Connection,
+        *,
+        open_path: Path | None = None,
+    ) -> None:
         super().__init__(parent, name="courselibrary", class_="ChessPuzzlesCourseLibrary")
         self.title("Course Library")
         self.transient(parent)
         self._library = library
         self._connection = connection
+        # The app holds a SQLite handle on this one; deleting it would fail
+        # outright on Windows and strand the main window everywhere else.
+        self._open_path = open_path.resolve() if open_path is not None else None
         self.result: Path | None = None
         self._courses: dict[str, LibraryCourse] = {}
         self._attempts: dict[str, int] = {}
@@ -78,6 +88,8 @@ class CourseLibraryDialog(tk.Toplevel):
         ttk.Button(footer, text="Pin / unpin", command=self._toggle_pin).pack(side=tk.LEFT)
         ttk.Button(footer, text="Status...", command=self._set_status).pack(side=tk.LEFT, padx=(6, 0))
         ttk.Button(footer, text="Tags...", command=self._edit_tags).pack(side=tk.LEFT, padx=(6, 0))
+        ttk.Button(footer, text="Delete...", command=self._delete_course).pack(side=tk.LEFT, padx=(6, 0))
+        self._table.bind("<Delete>", lambda _event: self._delete_course())
         self.bind("<Escape>", lambda _event: self.destroy())
         search.focus_set()
         self._populate()
@@ -199,6 +211,45 @@ class CourseLibraryDialog(tk.Toplevel):
             return
         self.result = path
         self.destroy()
+
+    def _delete_course(self) -> None:
+        """Take a course off this page for good.
+
+        Deleting the file is what makes it stick: forgetting the index entry
+        alone lasts only until the next scan, and the dialog scans every time
+        it opens. A course whose file is already gone is simply forgotten --
+        the one case where nothing is deleted, which the prompt says.
+        """
+        course = self._selected()
+        if course is None:
+            return
+        paths = self._library.available_paths(course.database_id)
+        if self._open_path is not None and any(path == self._open_path for path in paths):
+            messagebox.showinfo(
+                "Course in use",
+                f"'{course.name}' is the course you have open. Close it first.",
+                parent=self,
+            )
+            return
+        if not paths:
+            question = f"Remove '{course.name}' from the library?\n\nIts course file is already missing."
+        else:
+            listed = "\n".join(str(path) for path in paths)
+            question = (
+                f"Delete '{course.name}'?\n\nThis permanently deletes:\n{listed}\n\n"
+                "Your attempt history and notes are kept."
+            )
+        if not messagebox.askyesno("Delete course", question, default=messagebox.NO, parent=self):
+            return
+        for path in paths:
+            try:
+                path.unlink()
+            except OSError as exc:
+                messagebox.showerror("Could not delete", f"{path}\n\n{exc}", parent=self)
+                return
+        self._library.forget(course.database_id)
+        self._populate()
+        self._status.set(f"Deleted {course.name}.")
 
     def _rescan(self) -> None:
         self.configure(cursor="watch")

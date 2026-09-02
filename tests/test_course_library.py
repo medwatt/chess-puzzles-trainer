@@ -5,7 +5,7 @@ from pathlib import Path
 import chess
 
 from chess_puzzles.puzzle import Puzzle
-from chess_puzzles.store import ContentDatabase, ContentMeta, UserStore
+from chess_puzzles.store import Attempt, ContentDatabase, ContentMeta, UserStore, now_iso
 
 
 def _course(path: Path, database_id: str = "course-1", name: str = "Course") -> None:
@@ -80,3 +80,66 @@ def test_duplicate_identity_is_reported_and_missing_course_is_retained(tmp_path:
     course = store.library.courses()[0]
     assert not course.available
     assert course.database_id == "course-1"
+
+
+def test_forgetting_a_course_whose_file_remains_does_not_stick(tmp_path: Path) -> None:
+    # Why removal has to delete the file: the library dialog rescans every
+    # time it opens, and a scan re-indexes anything still on disk.
+    root = tmp_path / "courses"
+    root.mkdir()
+    _course(root / "one.cpdb")
+    store = UserStore.open(tmp_path / "user.db")
+    store.library.set_root(root)
+    store.library.scan()
+
+    store.library.forget("course-1")
+    assert store.library.courses() == []
+
+    store.library.scan()
+    assert [course.name for course in store.library.courses()] == ["Course"]
+
+
+def test_forgetting_a_missing_course_survives_a_rescan(tmp_path: Path) -> None:
+    root = tmp_path / "courses"
+    root.mkdir()
+    path = root / "one.cpdb"
+    _course(path)
+    store = UserStore.open(tmp_path / "user.db")
+    store.library.set_root(root)
+    store.library.scan()
+    path.unlink()
+    store.library.scan()
+    assert not store.library.courses()[0].available
+
+    store.library.forget("course-1")
+    store.library.scan()
+
+    assert store.library.courses() == []
+
+
+def test_forgetting_a_course_keeps_the_attempt_history(tmp_path: Path) -> None:
+    # The library index is a view over files; the training record is not.
+    root = tmp_path / "courses"
+    root.mkdir()
+    _course(root / "one.cpdb")
+    store = UserStore.open(tmp_path / "user.db")
+    store.library.set_root(root)
+    store.library.scan()
+    store.record_attempt(
+        Attempt(
+            puzzle_id="p1",
+            at=now_iso(),
+            outcome="solved",
+            mistakes=0,
+            aids=0,
+            grade="good",
+            duration_ms=1000,
+            database_id="course-1",
+            database_path=str(root / "one.cpdb"),
+        )
+    )
+
+    store.library.forget("course-1")
+
+    rows = store.connection.execute("SELECT COUNT(*) FROM attempt").fetchone()
+    assert rows[0] == 1

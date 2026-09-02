@@ -308,7 +308,12 @@ class MainDatabaseActions:
                 return
         if configured:
             library.set_root(configured)
-        path = CourseLibraryDialog(window.root, library, window.user_store.connection).show()
+        path = CourseLibraryDialog(
+            window.root,
+            library,
+            window.user_store.connection,
+            open_path=window.database_path,
+        ).show()
         if path is not None:
             self.open_database(path)
 
