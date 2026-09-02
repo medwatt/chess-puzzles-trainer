@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import chess
 
+from chess_puzzles.shortcuts import CONTINUE_KEY
+
 from chess_puzzles.app.main_window import MainWindow
-from chess_puzzles.app.refutation_playback import RefutationPlayback
+from chess_puzzles.app.variation_playback import VariationPlayback
 from chess_puzzles.puzzle import Puzzle, PuzzleSession
 from chess_puzzles.store import Attempt, UserStore, now_iso
 
@@ -87,10 +89,12 @@ class FakeWindow:
         self.audio = FakeAudio()
         self._layout = FakeLayout()
         self._status_var = FakeVar("")
-        self._pause_for_comment_var = FakeVar(False)
-        self._pause_playback_var = FakeVar(False)
+        self.options = {"stop_at_comments": False, "step_through_lines": False}
         self.comment_text = ""
         self.resumed = False
+
+    def option(self, key: str):
+        return self.options[key]
 
     def _display_comment(self, comment: str) -> str:
         return comment
@@ -102,10 +106,10 @@ class FakeWindow:
         self.resumed = True
 
 
-def _lesson_setup() -> tuple[FakeWindow, RefutationPlayback]:
+def _lesson_setup() -> tuple[FakeWindow, VariationPlayback]:
     session = PuzzleSession(LINE, chess.WHITE)
     window = FakeWindow(session)
-    playback = RefutationPlayback(window)
+    playback = VariationPlayback(window)
     playback.start_lesson(list(LINE.moves), ["centre [%cal Ge7e5]", "", "develop"])
     return window, playback
 
@@ -121,7 +125,7 @@ def test_lesson_plays_all_moves_without_error_flash() -> None:
     assert board_view.moves == [E4, E5, NF3]
     assert board_view.flashed == []  # a lesson is not a punished mistake
     assert board_view.annotations is not None  # author arrows shown
-    assert window._status_var.value == "Line shown - press m, then play it yourself."
+    assert window._status_var.value == f"Line shown - press {CONTINUE_KEY}, then play it yourself."
     assert not window.root.pending  # final position waits for the key
 
 
@@ -142,7 +146,7 @@ def test_lesson_rewinds_to_quiz_through_resume_hook() -> None:
 def test_empty_lesson_is_a_no_op() -> None:
     session = PuzzleSession(LINE, chess.WHITE)
     window = FakeWindow(session)
-    playback = RefutationPlayback(window)
+    playback = VariationPlayback(window)
 
     playback.start_lesson([], [])
 
@@ -169,8 +173,15 @@ class FakeDecisionWindow:
         self.session = session
         self.database = FakeDeck(kind)
         self.user_store = FakeUserStore(known or set())
-        self._demonstrate_var = FakeVar(True)
+        self.options = {"demonstrate_new_lines": True}
         self._line_demonstrated = False
+
+    def option(self, key: str):
+        return self.options[key]
+
+    @property
+    def _repertoire_deck(self) -> bool:
+        return self.database.kind == "repertoire"
 
 
 def test_new_repertoire_line_is_demonstrated_once() -> None:
@@ -192,7 +203,7 @@ def test_known_lines_and_tactics_decks_are_not_demonstrated() -> None:
     assert not MainWindow._should_demonstrate(tactics)
 
     disabled = FakeDecisionWindow(session)
-    disabled._demonstrate_var.set(False)
+    disabled.options["demonstrate_new_lines"] = False
     assert not MainWindow._should_demonstrate(disabled)
 
 

@@ -1,16 +1,17 @@
-"""Plays a move sequence out on the board: refutations and line lessons.
+"""Plays a move sequence out on the board: marked mistakes and line lessons.
 
-When the session classifies a move as a BLUNDER, the punishment should be
-experienced, not just read: the blunder lands on the board, the refutation
-plays out move by move, and the board rewinds to the decision point for a
-retry. The same engine demonstrates a repertoire line on first encounter
+When the session classifies a move as a MISTAKE, the consequence should be
+experienced, not just read: the move lands on the board, the line that
+punishes it plays out move by move, and the board rewinds to the decision
+point for a retry. The same engine demonstrates a repertoire line on first encounter
 (``start_lesson``): the new moves play out with the author's commentary,
 then the board rewinds so the user plays them back (learn-then-quiz).
 
-Pacing: silent moves auto-play on a lesson-speed delay, moves whose
-comment has prose wait for the continue key while pause-for-comment is on
-(the pause-playback-on-every-move setting extends that wait to all moves),
-and the final position always waits so the conclusion can be read. Comment
+Pacing: silent moves auto-play on a lesson-speed delay, moves whose comment
+has prose wait for the continue key while "stop at annotated moves" is on --
+the same setting that holds an annotated move while solving -- "step through
+played lines" extends that wait to every move, and the final position always
+waits so the conclusion can be read. Comment
 markup (%cal/%csl) is rendered as board arrows and circles at each step.
 
 The solving session never advances during playback -- the walkthrough runs on
@@ -24,15 +25,16 @@ from typing import TYPE_CHECKING
 
 import chess
 
-from chess_puzzles.constants import REFUTATION_STEP_DELAY_MS
+from chess_puzzles.constants import PLAYBACK_STEP_DELAY_MS
 from chess_puzzles.pgn.comments import annotations_from_comment, strip_annotation_commands
-from chess_puzzles.puzzle.tree import Refutation
+from chess_puzzles.puzzle.tree import MistakeLine
+from chess_puzzles.shortcuts import CONTINUE_KEY
 
 if TYPE_CHECKING:
     from chess_puzzles.app.main_window import MainWindow
 
 
-class RefutationPlayback:
+class VariationPlayback:
     def __init__(self, window: "MainWindow") -> None:
         self._window = window
         self._board: chess.Board | None = None
@@ -53,19 +55,19 @@ class RefutationPlayback:
 
     def start(
         self,
-        refutation: Refutation,
+        mistake_line: MistakeLine,
         *,
         origin: chess.Board | None = None,
         animate_first: bool = True,
     ) -> None:
         """``animate_first`` carries the input's animate flag: a dragged
-        blunder already sits on its target square, exactly like a dragged
-        correct move. Refutation replies always animate (they are computer
-        moves).
+        mistake already sits on its target square, exactly like a dragged
+        correct move. The replies that punish it always animate (they are
+        computer moves).
 
-        ``origin`` is the trap's decision point when it differs from the
-        session position -- the post-solve coda replays traps the user walked
-        past earlier in the line. The board rewinds there before the trap
+        ``origin`` is the mistake's decision point when it differs from the
+        session position -- the post-solve coda replays mistakes the user walked
+        past earlier in the line. The board rewinds there before the mistake
         plays, and returns to the session position when playback ends."""
         window = self._window
         assert window.session is not None
@@ -74,8 +76,8 @@ class RefutationPlayback:
         self._board = source.copy(stack=False)
         if origin is not None:
             window._layout.board.advance_position(self._board, None, animate=False)
-        self._steps = [(refutation.move, refutation.comments[0])]
-        self._steps.extend(zip(refutation.line, refutation.comments[1:]))
+        self._steps = [(mistake_line.move, mistake_line.comments[0])]
+        self._steps.extend(zip(mistake_line.line, mistake_line.comments[1:]))
         self._finished = False
         self._first_animate = animate_first
         self._played_any = False
@@ -132,7 +134,7 @@ class RefutationPlayback:
         move, comment = self._steps.pop(0)
         board_before = board.copy(stack=False)
         board.push(move)
-        # In a refutation the first step is the user's own move and follows
+        # In a marked mistake the first step is the user's own move and follows
         # the accepted-move conventions: it honors the input's animate flag
         # and flashes (red, where a correct move flashes green). Replies --
         # and every move of a lesson -- behave like computer moves: always
@@ -154,20 +156,22 @@ class RefutationPlayback:
         if not self._steps:
             self._finished = True
             window._status_var.set(
-                "Line shown - press m, then play it yourself."
+                f"Line shown - press {CONTINUE_KEY}, then play it yourself."
                 if self._lesson
-                else "Refutation shown - press m to try again."
+                else f"That is why it fails - press {CONTINUE_KEY} to try again."
             )
             return
-        if window._pause_playback_var.get() or (prose and window._pause_for_comment_var.get()):
+        if window.option("step_through_lines") or (
+            prose and window.option("stop_at_comments")
+        ):
             window._status_var.set(
-                "Lesson paused - press m for the next move."
+                f"Lesson paused - press {CONTINUE_KEY} for the next move."
                 if self._lesson
-                else "Press m to continue."
+                else f"Press {CONTINUE_KEY} to continue."
             )
             return
-        window._status_var.set("Watch the line." if self._lesson else "Watch the refutation.")
-        self._after_id = window.root.after(REFUTATION_STEP_DELAY_MS, self._on_timer)
+        window._status_var.set("Watch the line." if self._lesson else "Watch what happens.")
+        self._after_id = window.root.after(PLAYBACK_STEP_DELAY_MS, self._on_timer)
 
     def _on_timer(self) -> None:
         self._after_id = None

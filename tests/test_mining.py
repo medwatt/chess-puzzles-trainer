@@ -19,7 +19,7 @@ def _row() -> _Row:
         puzzle_id="test1",
         board=board,
         blunder=chess.Move.from_uci("c6d4"),
-        refutation=(chess.Move.from_uci("f3e5"),),
+        mistake_line=(chess.Move.from_uci("f3e5"),),
         rating=1100,
         themes=("hangingPiece", "opening"),
         game_url="https://lichess.org/abc",
@@ -44,8 +44,8 @@ def test_built_pgn_round_trips_through_loader_and_session() -> None:
 
     # The certified trap punishes; the extra safe move completes as a leaf.
     session = PuzzleSession(puzzle, chess.BLACK)
-    assert session.play_user_move(chess.Move.from_uci("c6d4")) is MoveResult.BLUNDER
-    assert [m.uci() for m in session.last_refutation.line] == ["f3e5"]
+    assert session.play_user_move(chess.Move.from_uci("c6d4")) is MoveResult.MISTAKE
+    assert [m.uci() for m in session.last_mistake_line.line] == ["f3e5"]
     assert session.play_user_move(chess.Move.from_uci("f8c5")) is MoveResult.COMPLETE
 
     session.reset()

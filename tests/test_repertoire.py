@@ -81,7 +81,7 @@ def test_mistake_variations_do_not_count_as_finishers() -> None:
     profile = profile_games(_games(pgn))
 
     # Only the mainline leaf (ending on White's 2. Nf3) counts; the ?-marked
-    # 1...f6 refutation line is punish-content, not a drillable line.
+    # 1...f6 mistake_line line is punish-content, not a drillable line.
     assert profile.white_finishers == 1
     assert profile.black_finishers == 0
 

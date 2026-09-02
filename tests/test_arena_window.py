@@ -6,8 +6,9 @@ from types import SimpleNamespace
 import chess
 
 from chess_puzzles.app.main_window import MainWindow
-from chess_puzzles.app.refutation_playback import RefutationPlayback
+from chess_puzzles.app.variation_playback import VariationPlayback
 from chess_puzzles.puzzle import Puzzle, PuzzleSession
+from chess_puzzles.settings import AppSettings
 from chess_puzzles.store import ContentDatabase, ContentMeta, DECK_KIND_ARENA, UserStore, now_iso
 
 
@@ -46,7 +47,7 @@ def _window(tmp_path: Path, puzzle: Puzzle) -> MainWindow:
     window.database_path = None
     window._stats_anchor = "2026-01-01T00:00:00Z"
     window.current_index = 0
-    window._show_session_stats_var = SimpleNamespace(get=lambda: True)
+    window.state = SimpleNamespace(settings=AppSettings())
     window._session_stats_vars = {
         key: _Var() for key in ("Attempted", "Solved", "Total", "Average")
     }
@@ -58,9 +59,9 @@ def _window(tmp_path: Path, puzzle: Puzzle) -> MainWindow:
         board=SimpleNamespace(show_hint_square=lambda _square: None)
     )
     window._status_var = _Var()
-    window._refutation_playback = RefutationPlayback(window)
-    window._avoided_traps = []
-    window._seen_refutations = set()
+    window._playback = VariationPlayback(window)
+    window._avoided_mistakes = []
+    window._seen_mistakes = set()
     return window
 
 

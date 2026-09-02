@@ -6,8 +6,9 @@ from types import SimpleNamespace
 import chess
 
 from chess_puzzles.app.main_window import MainWindow
-from chess_puzzles.app.refutation_playback import RefutationPlayback
+from chess_puzzles.app.variation_playback import VariationPlayback
 from chess_puzzles.puzzle import Puzzle, PuzzleSession
+from chess_puzzles.settings import AppSettings
 from chess_puzzles.store import UserStore
 
 
@@ -41,14 +42,14 @@ def test_assisted_user_move_then_leave_records_gave_up(tmp_path: Path) -> None:
     window.database = None
     window.database_path = None
     window._stats_anchor = "2026-01-01T00:00:00Z"
-    window._show_session_stats_var = SimpleNamespace(get=lambda: True)
+    window.state = SimpleNamespace(settings=AppSettings())
     window._session_stats_vars = {key: _Var() for key in ("Attempted", "Solved", "Total", "Average")}
     window._layout = SimpleNamespace(board=SimpleNamespace())
     window._status_var = SimpleNamespace(set=lambda _value: None)
     window._apply_correct_move = lambda result, move, board_before, status: None
-    window._refutation_playback = RefutationPlayback(window)
-    window._avoided_traps = []
-    window._seen_refutations = set()
+    window._playback = VariationPlayback(window)
+    window._avoided_mistakes = []
+    window._seen_mistakes = set()
 
     window.play_next_move_for_user()
     window._finalize_visit()

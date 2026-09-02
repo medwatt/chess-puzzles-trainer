@@ -2,13 +2,13 @@
 
 The content store keeps each puzzle's full PGN (``pgn_text``) verbatim, so
 every variation an author wrote -- alternative lines, annotated mistakes and
-their refutations -- is already persisted even though ``Puzzle.moves`` holds
+the lines that punish them -- is already persisted even though ``Puzzle.moves`` holds
 only the drilled line. This module turns that text back into a tree the
 solving session can consult when the user deviates from the expected move.
 
 Semantics follow standard PGN annotation glyphs: a variation whose first move
 carries ``?`` ($2), ``??`` ($4) or ``?!`` ($6) is a mistake to punish, and the
-rest of that variation is its refutation. Any other sibling variation is an
+rest of that variation is the line that punishes it. Any other sibling variation is an
 acceptable alternative. Trees are derived on demand and never persisted; a
 puzzle without variations (or without PGN at all) simply has no tree, which
 leaves session behavior exactly as it was.
@@ -49,7 +49,7 @@ class TreeNode:
 
 
 @dataclass(frozen=True, slots=True)
-class Refutation:
+class MistakeLine:
     """Why a mistake-marked move fails: the punishing line and its commentary.
 
     ``comments[0]`` annotates the mistake move itself; ``comments[i]``
@@ -98,7 +98,7 @@ class MoveTree:
         return cls(_build_node(game))
 
     @staticmethod
-    def refutation_of(node: TreeNode) -> Refutation:
+    def mistake_line_of(node: TreeNode) -> MistakeLine:
         """The principal continuation after a mistake move, with comments."""
         assert node.move is not None
         line: list[chess.Move] = []
@@ -109,7 +109,7 @@ class MoveTree:
             assert current.move is not None
             line.append(current.move)
             comments.append(current.comment)
-        return Refutation(move=node.move, line=tuple(line), comments=tuple(comments))
+        return MistakeLine(move=node.move, line=tuple(line), comments=tuple(comments))
 
 
 def _build_node(game_node: chess.pgn.GameNode) -> TreeNode:

@@ -121,7 +121,7 @@ def _count_line_finishers(game: chess.pgn.Game) -> tuple[int, int]:
     """Leaves of the drillable tree, counted by which color moved last.
 
     Mirrors the loader's line enumeration: mistake-marked variations are
-    refutation content, and null moves end a line, so neither counts as a
+    mistake_line content, and null moves end a line, so neither counts as a
     finisher. Parity from the root position identifies the mover without
     replaying moves.
     """

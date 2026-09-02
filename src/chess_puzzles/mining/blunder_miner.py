@@ -20,7 +20,7 @@ for the trap itself:
   rather than marking a perfectly good move wrong.
 
 Output is course-format PGN (the blunder as a ``$4`` variation carrying the
-game refutation), which the existing loader/session/playback pipeline
+game mistake_line), which the existing loader/session/playback pipeline
 consumes with no special handling.
 """
 
@@ -72,7 +72,7 @@ class _Row:
     puzzle_id: str
     board: chess.Board
     blunder: chess.Move
-    refutation: tuple[chess.Move, ...]
+    mistake_line: tuple[chess.Move, ...]
     rating: int
     themes: tuple[str, ...]
     game_url: str
@@ -140,7 +140,7 @@ class BlunderMiner:
             puzzle_id=row.get("PuzzleId", "").strip(),
             board=board,
             blunder=blunder,
-            refutation=tuple(parsed[1:]),
+            mistake_line=tuple(parsed[1:]),
             rating=rating,
             themes=tuple(row.get("Themes", "").split()),
             game_url=row.get("GameUrl", "").strip(),
@@ -246,16 +246,18 @@ def _build_pgn(row: _Row, safe_move: chess.Move, alternatives: list[chess.Move])
         game.headers["GameUrl"] = row.game_url
     game.comment = "Find a safe move."
 
-    main = game.add_variation(safe_move)
-    main.comment = "Safe."
+    # No comment on the solution move: "stop at annotated moves" holds the
+    # puzzle open at any commented move, and a generated deck has nothing to
+    # say here that the status bar does not already say.
+    game.add_variation(safe_move)
 
     trap = game.add_variation(row.blunder)
     trap.nags.add(chess.pgn.NAG_BLUNDER)
     trap.comment = f"The move played in the source game (puzzle rating {row.rating})."
     node = trap
-    for move in row.refutation:
+    for move in row.mistake_line:
         node = node.add_variation(move)
-    node.comment = "The refutation played out."
+    node.comment = "The mistake_line played out."
 
     for move in alternatives:
         alt = game.add_variation(move)

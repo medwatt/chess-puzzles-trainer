@@ -4,6 +4,7 @@ from __future__ import annotations
 import time
 from dataclasses import replace
 from pathlib import Path
+from typing import Any
 import tkinter as tk
 from tkinter import filedialog, font, messagebox, simpledialog
 
@@ -15,7 +16,7 @@ from chess_puzzles.app.main_database_actions import MainDatabaseActions
 from chess_puzzles.app.main_layout import MainLayoutBuilder
 from chess_puzzles.app.main_menu import MainMenuBuilder
 from chess_puzzles.app.main_user_notes import MainUserNotes
-from chess_puzzles.app.refutation_playback import RefutationPlayback
+from chess_puzzles.app.variation_playback import VariationPlayback
 from chess_puzzles.board import BoardPresentation, BoardPresenter, snapshot_to_svg
 from chess_puzzles.board.board_state import BoardSnapshot
 from chess_puzzles.board.board_theme import PieceTheme, default_annotation_theme
@@ -47,11 +48,14 @@ from chess_puzzles.pgn.comments import strip_annotation_commands
 from chess_puzzles.pgn.exporter import export_puzzles_to_pgn
 from chess_puzzles.pgn.utils import pgn_for_puzzle
 from chess_puzzles.pgn.viewer import PgnViewer
-from chess_puzzles.puzzle import MoveResult, Puzzle, PuzzleSession, Refutation
+from chess_puzzles.puzzle import MoveResult, Puzzle, PuzzleSession, MistakeLine
 from chess_puzzles.puzzle.grade import grade_solve
 from chess_puzzles.puzzle.prefix import drill_prefix_length
 from chess_puzzles.reports import AttemptSummary, attempt_summary, format_duration_ms
+from chess_puzzles.dialogs.options import OptionsDialog
+from chess_puzzles.settings.options import OPTIONS, QUICK_OPTIONS
 from chess_puzzles.settings.repository import SettingsRepository
+from chess_puzzles.shortcuts import CONTINUE_KEY
 from chess_puzzles.store import (
     DECK_KIND_ARENA,
     DECK_KIND_REPERTOIRE,
@@ -94,24 +98,15 @@ class MainWindow:
         self._board_theme_var = tk.StringVar(value=state.settings.board_theme_id)
         self._piece_theme_var = tk.StringVar(value=state.settings.piece_theme_id)
 
-        # View toggles persisted in user settings
-        self._coordinates_var = tk.BooleanVar(value=state.settings.show_coordinates)
-        self._show_pgn_after_solve_var = tk.BooleanVar(value=state.settings.show_pgn_after_solve)
-        self._show_evaluation_bar_var = tk.BooleanVar(value=state.settings.show_evaluation_bar)
-        self._show_session_stats_var = tk.BooleanVar(value=state.settings.show_session_stats)
-        self._show_user_notes_var = tk.BooleanVar(value=state.settings.show_user_notes)
-        self._play_sound_var = tk.BooleanVar(value=state.settings.sound_enabled)
-
-        # Training preferences (persisted in user settings)
+        # Preferences live in state.settings and are read through option();
+        # only the sidebar's quick toggles need a tk variable, kept in step
+        # by set_option. See settings.options for the full table.
+        self._quick_vars: dict[str, tk.BooleanVar] = {
+            option.key: tk.BooleanVar(value=bool(getattr(state.settings, option.key)))
+            for option in QUICK_OPTIONS
+        }
+        # Not a preference: it edits the open puzzle's skip flag.
         self._skip_first_var = tk.BooleanVar(value=False)
-        self._auto_next_var = tk.BooleanVar(value=state.settings.auto_next_enabled)
-        self._clean_comments_var = tk.BooleanVar(value=state.settings.clean_comments)
-        self._pause_for_comment_var = tk.BooleanVar(value=state.settings.pause_for_comment)
-        self._pause_playback_var = tk.BooleanVar(value=state.settings.pause_playback_each_move)
-        self._start_at_divergence_var = tk.BooleanVar(
-            value=state.settings.start_lines_at_divergence
-        )
-        self._demonstrate_var = tk.BooleanVar(value=state.settings.demonstrate_new_lines)
 
         # Sidebar/status text bound to labels
         self._status_var = tk.StringVar(value="Ready")
@@ -163,13 +158,13 @@ class MainWindow:
         self._computer_reply_after_id: str | None = None
         self._prefix_after_id: str | None = None
         self.waiting_for_continue = False
-        self._refutation_playback = RefutationPlayback(self)
-        # Post-solve coda: traps the user walked past, offered for review
-        # after completion. _seen_refutations keys (decision FEN, move uci)
-        # the user already experienced this puzzle, so a trap they fell into
-        # is not re-offered as a lesson.
-        self._avoided_traps: list[tuple[str, Refutation]] = []
-        self._seen_refutations: set[tuple[str, str]] = set()
+        self._playback = VariationPlayback(self)
+        # Post-solve coda: marked mistakes the user walked past, offered for
+        # review after completion. _seen_mistakes keys (decision FEN, move
+        # uci) the user already experienced this puzzle, so a mistake they
+        # played is not re-offered as a lesson.
+        self._avoided_mistakes: list[tuple[str, MistakeLine]] = []
+        self._seen_mistakes: set[tuple[str, str]] = set()
 
         # Engine result polling runs only while analysis is active.
         # Continuous evaluation only happens when the user asked for it;
@@ -228,20 +223,6 @@ class MainWindow:
             self.save_settings(piece_theme_id=theme.id)
         self._status_var.set(f"Piece theme: {theme.name}")
 
-    # Menu checkbuttons flip their variable before invoking the command, so
-    # the on_*_changed handlers only apply the current value. The keyboard
-    # shortcuts bypass the menu, so the toggle_* variants flip the variable
-    # themselves first.
-    def toggle_coordinates(self) -> None:
-        self._coordinates_var.set(not self._coordinates_var.get())
-        self.on_coordinates_changed()
-
-    def on_coordinates_changed(self) -> None:
-        enabled = bool(self._coordinates_var.get())
-        self.presenter.update(show_coordinates=enabled)
-        self.save_settings(show_coordinates=enabled)
-        self._status_var.set("Coordinates shown" if enabled else "Coordinates hidden")
-
     def flip_board(self) -> None:
         self._layout.board.set_flipped(not self._layout.board.state.flipped)
 
@@ -264,10 +245,10 @@ class MainWindow:
             return
         self.cancel_computer_reply()
         self.cancel_prefix_recap()
-        self._refutation_playback.cancel()
-        # _seen_refutations survives a reset on purpose: a trap already
+        self._playback.cancel()
+        # _seen_mistakes survives a reset on purpose: a mistake already
         # experienced this visit is not re-offered after re-solving.
-        self._avoided_traps = []
+        self._avoided_mistakes = []
         # The run's counters restart, but the visit's evidence must not.
         self._carry_mistakes += self.session.mistakes
         self._carry_aids += self.session.aids_used
@@ -312,33 +293,6 @@ class MainWindow:
         self.root.clipboard_append(pgn_for_puzzle(self.session.puzzle))
         self._status_var.set("Puzzle PGN copied")
 
-    def toggle_show_pgn_after_solve(self) -> None:
-        self._show_pgn_after_solve_var.set(not self._show_pgn_after_solve_var.get())
-        self.on_show_pgn_after_solve_changed()
-
-    def on_show_pgn_after_solve_changed(self) -> None:
-        self.save_settings(show_pgn_after_solve=bool(self._show_pgn_after_solve_var.get()))
-
-    def toggle_show_evaluation_bar(self) -> None:
-        self._show_evaluation_bar_var.set(not self._show_evaluation_bar_var.get())
-        self.on_show_evaluation_bar_changed()
-
-    def on_show_evaluation_bar_changed(self) -> None:
-        visible = bool(self._show_evaluation_bar_var.get())
-        self._layout.board_frame.set_evaluation_bar_visible(visible)
-        self.save_settings(show_evaluation_bar=visible)
-
-    def toggle_user_notes(self) -> None:
-        self._user_notes.toggle()
-
-    def apply_user_notes_visibility(self) -> None:
-        self._user_notes.apply_visibility()
-
-    def toggle_play_sound(self) -> None:
-        enabled = bool(self._play_sound_var.get())
-        self.audio.set_enabled(enabled)
-        self.save_settings(sound_enabled=enabled)
-
     def toggle_current_skip(self) -> None:
         if self.session is None or self.database is None:
             return
@@ -349,40 +303,68 @@ class MainWindow:
         self.database.set_skip_first_move(self.current_index + 1, value)
         self.load_current_puzzle()
 
-    def toggle_auto_next(self) -> None:
-        self._auto_next_var.set(not self._auto_next_var.get())
-        self.save_training_preferences()
+    # --- preferences ----------------------------------------------------
+    # Every preference is read here and nowhere else, so a row in
+    # settings.options is all a new one needs. _apply_option holds the few
+    # that change the window the moment they are set.
 
-    def toggle_clean_comments(self) -> None:
-        self._clean_comments_var.set(not self._clean_comments_var.get())
-        self.on_clean_comments_changed()
+    def option(self, key: str) -> Any:
+        return getattr(self.state.settings, key)
 
-    def save_training_preferences(self) -> None:
-        self.save_settings(
-            auto_next_enabled=bool(self._auto_next_var.get()),
-            clean_comments=bool(self._clean_comments_var.get()),
-            pause_for_comment=bool(self._pause_for_comment_var.get()),
-            pause_playback_each_move=bool(self._pause_playback_var.get()),
-            start_lines_at_divergence=bool(self._start_at_divergence_var.get()),
-            demonstrate_new_lines=bool(self._demonstrate_var.get()),
-        )
+    def set_option(self, key: str, value: object) -> None:
+        self.save_settings(**{key: value})
+        variable = self._quick_vars.get(key)
+        if variable is not None:
+            variable.set(bool(value))
+        self._apply_option(key)
 
-    def on_start_at_divergence_changed(self) -> None:
-        self.save_training_preferences()
-        # Re-enter the current line under the new policy right away.
-        if (
-            self.session is not None
-            and self.database is not None
-            and self.database.kind == DECK_KIND_REPERTOIRE
-        ):
+    def toggle_option(self, key: str) -> None:
+        self.set_option(key, not bool(self.option(key)))
+
+    def configure_options(self) -> None:
+        values = {option.key: self.option(option.key) for option in OPTIONS}
+        deck_kind = self.database.kind if self.database is not None else None
+        result = OptionsDialog(self.root, values, deck_kind=deck_kind).show_modal()
+        if result is None:
+            return
+        for key, value in result.items():
+            if value != values[key]:
+                self.set_option(key, value)
+        self._status_var.set("Options saved.")
+
+    def _apply_option(self, key: str) -> None:
+        """Show the change now, for the preferences the window can act on."""
+        if key == "show_coordinates":
+            shown = bool(self.option(key))
+            self.presenter.update(show_coordinates=shown)
+            self._status_var.set("Coordinates shown" if shown else "Coordinates hidden")
+        elif key == "show_evaluation_bar":
+            self._layout.board_frame.set_evaluation_bar_visible(bool(self.option(key)))
+        elif key == "show_session_stats":
+            visible = bool(self.option(key))
+            self._layout.set_session_stats_visible(visible)
+            if visible:
+                self._refresh_session_stats()
+        elif key == "show_user_notes":
+            self._user_notes.apply_visibility()
+        elif key == "sound_enabled":
+            self.audio.set_enabled(bool(self.option(key)))
+        elif key == "reflow_comments":
+            self._refresh_comment_view()
+        elif key == "start_lines_at_divergence" and self._repertoire_deck:
+            # Re-enter the current line under the new policy right away.
             self.load_current_puzzle()
 
-    def on_clean_comments_changed(self) -> None:
-        self.save_training_preferences()
-        if self.session is not None:
-            self._replace_text(
-                self._layout.comment_view, self._display_comment(self.session.current_comment)
-            )
+    @property
+    def _repertoire_deck(self) -> bool:
+        return self.database is not None and self.database.kind == DECK_KIND_REPERTOIRE
+
+    def _refresh_comment_view(self) -> None:
+        if self.session is None or not hasattr(self._layout, "comment_view"):
+            return
+        self._replace_text(
+            self._layout.comment_view, self._display_comment(self.session.current_comment)
+        )
 
     def on_user_note_changed(self) -> None:
         self._user_notes.on_changed()
@@ -493,7 +475,7 @@ class MainWindow:
     def _display_comment(self, comment: str) -> str:
         # [%csl]/[%cal] commands are board-drawing instructions, never prose,
         # so they are stripped regardless of the "Clean comments" toggle.
-        return display_comment(strip_annotation_commands(comment), self._clean_comments_var.get())
+        return display_comment(strip_annotation_commands(comment), self.option("reflow_comments"))
 
     def edit_current_database(self) -> None:
         self._database.edit_current_database()
@@ -777,9 +759,9 @@ class MainWindow:
         self.session = PuzzleSession(
             puzzle, player_color, prefix_length=self._drill_prefix_for(puzzle)
         )
-        self._refutation_playback.cancel()
-        self._avoided_traps = []
-        self._seen_refutations = set()
+        self._playback.cancel()
+        self._avoided_mistakes = []
+        self._seen_mistakes = set()
         self.waiting_for_continue = False
         self._engaged = False
         self._line_demonstrated = False
@@ -858,12 +840,8 @@ class MainWindow:
         self.load_current_puzzle()
 
     def on_move_requested(self, move: chess.Move, *, animate: bool = True) -> None:
-        if self._refutation_playback.active:
-            self._status_var.set(
-                "Watching the line - press m to continue."
-                if self._refutation_playback.is_lesson
-                else "Watching the refutation - press m to continue."
-            )
+        if self._playback.active:
+            self._status_var.set(f"Watching the line - press {CONTINUE_KEY} to continue.")
             return
         if self.session is None:
             board = self._layout.board.state.board.copy(stack=False)
@@ -888,15 +866,15 @@ class MainWindow:
             self._layout.board.flash_move(move)
             self._status_var.set(f"Also playable - but this puzzle trains {self._expected_san()}.")
             return
-        if result == MoveResult.BLUNDER:
-            refutation = self.session.last_refutation
-            if refutation is not None:
-                # The blunder is played onto the board and punished; the
+        if result == MoveResult.MISTAKE:
+            mistake_line = self.session.last_mistake_line
+            if mistake_line is not None:
+                # The mistake is played onto the board and punished; the
                 # playback rewinds to this position when it finishes. It
                 # supplies the move sound itself -- play_error() here would
                 # double it (both resolve to move.wav).
-                self._seen_refutations.add((self.session.board.fen(), refutation.move.uci()))
-                self._refutation_playback.start(refutation, animate_first=animate)
+                self._seen_mistakes.add((self.session.board.fen(), mistake_line.move.uci()))
+                self._playback.start(mistake_line, animate_first=animate)
             else:
                 self.audio.play_error()
                 self._layout.board.flash_move(move)
@@ -977,9 +955,9 @@ class MainWindow:
         self._status_var.set(on_message if new_mode is mode else "Insight overlay hidden.")
 
     def show_hint(self) -> None:
-        # During refutation playback the board is not at the session position,
+        # During variation playback the board is not at the session position,
         # so a hint would point at a piece that may not even be there.
-        if self._refutation_playback.active:
+        if self._playback.active:
             return
         if self.session is None or self.session.expected_move is None:
             return
@@ -992,12 +970,18 @@ class MainWindow:
         self._status_var.set(f"Hint: move the {label} on {chess.square_name(move.from_square)}.")
 
     def play_next_move_for_user(self) -> None:
-        if self._refutation_playback.advance():
+        if self._playback.advance():
             return
-        if self._avoided_traps and self.session is not None and self.session.is_complete:
-            fen, refutation = self._avoided_traps.pop(0)
-            self._seen_refutations.add((fen, refutation.move.uci()))
-            self._refutation_playback.start(refutation, origin=chess.Board(fen))
+        if self._avoided_mistakes and self.session is not None and self.session.is_complete:
+            fen, mistake_line = self._avoided_mistakes.pop(0)
+            self._seen_mistakes.add((fen, mistake_line.move.uci()))
+            self._playback.start(mistake_line, origin=chess.Board(fen))
+            return
+        # Nothing left to show on a solved puzzle: the key that cleared the
+        # earlier stops finishes the job. Only where something was going to
+        # advance anyway -- otherwise the status bar never promised it.
+        if self.session is not None and self.session.is_complete and self.option("auto_advance"):
+            self.next_puzzle()
             return
         if self.session is None or self.session.expected_move is None:
             return
@@ -1051,34 +1035,60 @@ class MainWindow:
             return move.uci()
 
     def _finish_puzzle(self) -> None:
-        """Completion housekeeping, plus the trap coda: if the solved line
-        walked past marked mistakes the user never experienced, offer to
-        replay them instead of auto-advancing."""
+        """Completion housekeeping, then whatever the user asked to see.
+
+        One rule, the same in every mode: the puzzle advances once nothing is
+        waiting on the user. Each thing they asked for -- a marked mistake to
+        review, an unread comment -- holds the puzzle open with the message
+        that says so, and the continue key clears one of them at a time.
+        """
         assert self.session is not None
         self._record_solve()
-        self._avoided_traps = [
-            (fen, refutation)
-            for fen, refutation in self.session.avoided_refutations()
-            if (fen, refutation.move.uci()) not in self._seen_refutations
-        ]
-        self._maybe_show_pgn_after_solve()
-        if self._avoided_traps:
-            self._status_var.set("Puzzle complete - press m to review the trap you avoided.")
+        self._avoided_mistakes = self._mistakes_to_offer()
+        waiting = self._post_solve_stop()
+        if waiting is not None:
+            self._status_var.set(waiting)
             return
-        self._maybe_auto_next()
+        self._maybe_auto_advance()
+
+    def _mistakes_to_offer(self) -> list[tuple[str, MistakeLine]]:
+        """Marked mistakes on this line that the user neither played nor saw."""
+        assert self.session is not None
+        if not self.option("show_avoided_mistakes"):
+            return []
+        return [
+            (fen, mistake_line)
+            for fen, mistake_line in self.session.avoided_mistakes()
+            if (fen, mistake_line.move.uci()) not in self._seen_mistakes
+        ]
+
+    def _post_solve_stop(self) -> str | None:
+        """Message for the first thing waiting on the user, or None."""
+        assert self.session is not None
+        if self._avoided_mistakes:
+            return f"Puzzle complete - press {CONTINUE_KEY} to see the mistake you avoided."
+        # A final comment only has to hold the puzzle open when something
+        # would otherwise take it away.
+        if (
+            self.option("auto_advance")
+            and self.option("stop_at_comments")
+            and self.session.current_comment.strip()
+        ):
+            return f"Puzzle complete - press {CONTINUE_KEY} for the next puzzle."
+        return None
 
     def _drill_prefix_for(self, puzzle: Puzzle) -> int:
         """Recap length for repertoire decks: where this line joins the previous one."""
-        if self.database is None or self.database.kind != DECK_KIND_REPERTOIRE:
+        if not self._repertoire_deck:
             return 0
-        if not self._start_at_divergence_var.get() or self.current_index <= 0:
+        if not self.option("start_lines_at_divergence") or self.current_index <= 0:
             return 0
         return drill_prefix_length(self.database.puzzle_at(self.current_index - 1), puzzle)
 
     def _start_prefix_recap(self) -> None:
         """Fast-forward the moves shared with the previous line, animated.
 
-        The recap advances the real session (unlike refutation playback's
+        The recap advances the real session (unlike mistake_line playback's
         scratch board): these are the line's own moves, just not graded.
         Board input during the recap is answered with WAITING by the session."""
         self.cancel_computer_reply()
@@ -1133,9 +1143,9 @@ class MainWindow:
         """
         if self.session is None or self.session.is_complete or self._line_demonstrated:
             return False
-        if self.database is None or self.database.kind != DECK_KIND_REPERTOIRE:
+        if not self._repertoire_deck:
             return False
-        if not self._demonstrate_var.get():
+        if not self.option("demonstrate_new_lines"):
             return False
         return not self.user_store.has_solved(self.session.puzzle.puzzle_id)
 
@@ -1154,7 +1164,7 @@ class MainWindow:
             session.puzzle.comments[index] if index < len(session.puzzle.comments) else ""
             for index in range(start + 1, start + 1 + len(moves))
         ]
-        self._refutation_playback.start_lesson(moves, comments)
+        self._playback.start_lesson(moves, comments)
 
     def _resume_after_lesson(self) -> None:
         """Quiz the line just shown: the lesson rewound to the quiz point."""
@@ -1174,9 +1184,9 @@ class MainWindow:
             or self.session.board.turn == self.session.player_color
         ):
             return
-        if self._pause_for_comment_var.get() and self.session.current_comment.strip():
+        if self.option("stop_at_comments") and self.session.current_comment.strip():
             self.waiting_for_continue = True
-            self._status_var.set("Correct: press m to continue.")
+            self._status_var.set(f"Correct - press {CONTINUE_KEY} to continue.")
             return
         self._computer_reply_after_id = self.root.after(
             COMPUTER_REPLY_DELAY_MS, self._play_computer_reply
@@ -1222,10 +1232,7 @@ class MainWindow:
         self._request_engine_analysis()
         self._title_var.set(self.session.puzzle.title)
         self._update_puzzle_info()
-        if hasattr(self._layout, "comment_view"):
-            self._replace_text(
-                self._layout.comment_view, self._display_comment(self.session.current_comment)
-            )
+        self._refresh_comment_view()
         self._status_var.set(status)
 
     def _player_color_for_puzzle(self, puzzle: Puzzle) -> chess.Color:
@@ -1297,17 +1304,13 @@ class MainWindow:
             var.set("-")
         self._move_progress.set(0.0)
 
-    def _maybe_show_pgn_after_solve(self) -> None:
-        if not self._auto_next_var.get() and self._show_pgn_after_solve_var.get():
-            self.show_pgn_viewer()
-
-    def _maybe_auto_next(self) -> None:
-        if self.database is None:
+    def _maybe_auto_advance(self) -> None:
+        if self.database is None or not self.option("auto_advance"):
             return
         # An arena has no fixed end: next_puzzle refills the deck when the
-        # last queued puzzle is done, so auto-next keeps the stream going.
+        # last queued puzzle is done, so advancing keeps the stream going.
         at_end = self.current_index >= self.database.count() - 1
-        if self._auto_next_var.get() and (self.arena_mode or not at_end):
+        if self.arena_mode or not at_end:
             self.root.after(AUTO_NEXT_DELAY_MS, self.next_puzzle)
 
     def _maybe_start_solve_clock(self) -> None:
@@ -1485,7 +1488,7 @@ class MainWindow:
 
     def _refresh_session_stats(self) -> None:
         # No point querying for a hidden HUD; recompute on demand when re-shown.
-        if not self._show_session_stats_var.get():
+        if not self.option("show_session_stats"):
             return
         summary = attempt_summary(self.user_store.connection, since=self._stats_anchor)
         self._session_stats_vars["Attempted"].set(str(summary.attempted))
@@ -1496,13 +1499,6 @@ class MainWindow:
     def reset_session_stats(self) -> None:
         self._stats_anchor = now_iso()
         self._refresh_session_stats()
-
-    def on_show_session_stats_changed(self) -> None:
-        visible = bool(self._show_session_stats_var.get())
-        self._layout.set_session_stats_visible(visible)
-        if visible:
-            self._refresh_session_stats()
-        self.save_settings(show_session_stats=visible)
 
     def show_statistics(self) -> None:
         StatisticsDialog(self.root, self.user_store.connection).show()

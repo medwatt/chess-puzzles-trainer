@@ -86,7 +86,7 @@ class PgnLoader:
         """One puzzle per drillable variation line (repertoire import).
 
         A line is a maximal root-to-leaf path that never enters a variation
-        whose first move is NAG-marked as a mistake -- those are refutation
+        whose first move is NAG-marked as a mistake -- those are mistake_line
         content the session punishes, not lines to memorize. Every line keeps
         the full game PGN so the solving session can still classify
         deviations against the sibling variations. A game with no drillable

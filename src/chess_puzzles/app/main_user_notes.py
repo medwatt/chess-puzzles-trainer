@@ -14,15 +14,10 @@ class MainUserNotes:
         self._save_after_id: str | None = None
         self._loading = False
 
-    def toggle(self) -> None:
-        visible = bool(self.window._show_user_notes_var.get())
-        self.apply_visibility()
-        self.window.save_settings(show_user_notes=visible)
-
     def apply_visibility(self) -> None:
         window = self.window
         layout = window._layout
-        if window._show_user_notes_var.get():
+        if window.option("show_user_notes"):
             layout.user_notes_frame.grid()
             layout.sidebar.rowconfigure(4, weight=1)
             layout.sidebar.rowconfigure(6, weight=1)

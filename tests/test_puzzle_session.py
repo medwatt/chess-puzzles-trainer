@@ -58,19 +58,19 @@ def _tree_puzzle() -> Puzzle:
 def test_marked_variation_is_a_blunder_with_refutation() -> None:
     session = PuzzleSession(_tree_puzzle(), chess.WHITE)
 
-    assert session.play_user_move(chess.Move.from_uci("f2f3")) is MoveResult.BLUNDER
+    assert session.play_user_move(chess.Move.from_uci("f2f3")) is MoveResult.MISTAKE
     assert session.mistakes == 1
     assert session.board.fullmove_number == 1  # blunder is not played
 
-    refutation = session.last_refutation
-    assert refutation is not None
-    assert refutation.move == chess.Move.from_uci("f2f3")
-    assert [m.uci() for m in refutation.line] == ["e7e5", "g2g4", "d8h4"]
-    assert refutation.comments[0] == "weakens"
+    mistake_line = session.last_mistake_line
+    assert mistake_line is not None
+    assert mistake_line.move == chess.Move.from_uci("f2f3")
+    assert [m.uci() for m in mistake_line.line] == ["e7e5", "g2g4", "d8h4"]
+    assert mistake_line.comments[0] == "weakens"
 
-    # The session is still solvable afterwards, and the refutation clears.
+    # The session is still solvable afterwards, and the mistake_line clears.
     assert session.play_user_move(chess.Move.from_uci("e2e4")) is MoveResult.CORRECT
-    assert session.last_refutation is None
+    assert session.last_mistake_line is None
 
 
 def test_unmarked_sibling_line_is_an_alternative_not_a_mistake() -> None:
@@ -95,7 +95,7 @@ def test_puzzle_without_pgn_text_keeps_original_behavior() -> None:
     # Every legal deviation is plain INCORRECT when there is no tree.
     assert session.play_user_move(chess.Move.from_uci("d2d4")) is MoveResult.INCORRECT
     assert session.play_user_move(chess.Move.from_uci("f2f3")) is MoveResult.INCORRECT
-    assert session.last_refutation is None
+    assert session.last_mistake_line is None
 
 
 def test_reset_restores_tree_cursor() -> None:
@@ -105,7 +105,7 @@ def test_reset_restores_tree_cursor() -> None:
 
     # After reset the cursor is back at the root: the root's marked sibling
     # is a blunder again rather than an off-tree incorrect move.
-    assert session.play_user_move(chess.Move.from_uci("f2f3")) is MoveResult.BLUNDER
+    assert session.play_user_move(chess.Move.from_uci("f2f3")) is MoveResult.MISTAKE
 
 
 MINED_PGN = """[Event "Blunder check"]
@@ -132,7 +132,7 @@ def test_leaf_alternative_is_an_accepted_final_answer() -> None:
     assert session.board.move_stack == [chess.Move.from_uci("g1f3")]
 
     # The trap at the decision point is still reported as walked past.
-    avoided = session.avoided_refutations()
+    avoided = session.avoided_mistakes()
     assert len(avoided) == 1
     assert avoided[0][1].move == chess.Move.from_uci("f2f3")
 
@@ -147,18 +147,18 @@ def test_alternative_with_continuation_still_does_not_complete() -> None:
 
 def test_avoided_refutations_lists_traps_the_user_never_played() -> None:
     session = PuzzleSession(_tree_puzzle(), chess.WHITE)
-    assert session.avoided_refutations() == []  # nothing played yet
+    assert session.avoided_mistakes() == []  # nothing played yet
 
     assert session.play_user_move(chess.Move.from_uci("e2e4")) is MoveResult.CORRECT
-    avoided = session.avoided_refutations()
+    avoided = session.avoided_mistakes()
     assert len(avoided) == 1
-    fen, refutation = avoided[0]
+    fen, mistake_line = avoided[0]
     assert fen == chess.Board(chess.STARTING_FEN).fen()
-    assert refutation.move == chess.Move.from_uci("f2f3")
+    assert mistake_line.move == chess.Move.from_uci("f2f3")
 
     # Opponent decision points contribute nothing.
     assert session.play_computer_move() == chess.Move.from_uci("e7e5")
-    assert len(session.avoided_refutations()) == 1
+    assert len(session.avoided_mistakes()) == 1
 
 
 def test_avoided_refutations_empty_without_a_tree() -> None:
@@ -169,7 +169,7 @@ def test_avoided_refutations_empty_without_a_tree() -> None:
     )
     session = PuzzleSession(puzzle, chess.WHITE)
     session.play_user_move(chess.Move.from_uci("e2e4"))
-    assert session.avoided_refutations() == []
+    assert session.avoided_mistakes() == []
 
 
 def test_session_counts_incorrect_moves_and_reset_clears_them() -> None:

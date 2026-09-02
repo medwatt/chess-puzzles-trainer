@@ -9,6 +9,7 @@ from chess_puzzles.board import BoardShortcuts, BoardView
 from chess_puzzles.engine.board_analysis_frame import BoardAnalysisFrame
 from chess_puzzles.engine.evaluation_bar import EvaluationBar
 from chess_puzzles.platform.paths import assets_dir
+from chess_puzzles.settings.options import QUICK_OPTIONS
 from chess_puzzles.shortcuts import MENU_ACCELERATORS, MainShortcuts
 from chess_puzzles.ui.icon_recolor import RecoloredIconCache
 from chess_puzzles.ui.tooltip import ThemedTooltip
@@ -212,7 +213,7 @@ class MainLayoutBuilder:
         )
         self.user_note_view.grid(row=1, column=0, sticky="nsew", pady=(2, 0))
         self.user_note_view.bind("<<Modified>>", lambda _event: window.on_user_note_changed())
-        if not window._show_user_notes_var.get():
+        if not window.option("show_user_notes"):
             self.user_notes_frame.grid_remove()
             self.sidebar.rowconfigure(6, weight=0)
 
@@ -251,7 +252,7 @@ class MainLayoutBuilder:
         self._tooltips.append(
             ThemedTooltip(reset, "Reset session stats", lambda: self.window.theme_service.current)
         )
-        self.set_session_stats_visible(window._show_session_stats_var.get())
+        self.set_session_stats_visible(window.option("show_session_stats"))
 
     def set_session_stats_visible(self, visible: bool) -> None:
         if visible:
@@ -263,13 +264,15 @@ class MainLayoutBuilder:
         window = self.window
         self.welcome_frame = ttk.Frame(shell, padding=24)
         ttk.Label(self.welcome_frame, text="Chess Puzzles Trainer", font=("TkDefaultFont", 14, "bold")).pack(
-            pady=(0, 4)
+            pady=(0, 14)
         )
-        ttk.Label(self.welcome_frame, text="Choose a course to start training.").pack(pady=(0, 14))
+        # Where to start: three ways into a course, then the one drill that
+        # needs no course at all.
         primary_actions = (
             ("Course Library...", window.open_course_library),
             ("Open Course File...", window.open_database),
             ("Add Course...", window.add_course),
+            ("Board Vision...", window.open_board_vision_window),
         )
         for text, command in primary_actions:
             ttk.Button(
@@ -292,46 +295,47 @@ class MainLayoutBuilder:
             self.board_frame.grid()
             self.sidebar.grid()
             self.navigation.grid()
-            self.set_session_stats_visible(self.window._show_session_stats_var.get())
+            self.set_session_stats_visible(self.window.option("show_session_stats"))
 
     def _build_training_tools(self, practice_row: ttk.Frame) -> None:
+        """Skip-first-move plus the preferences worth flipping mid-session.
+
+        The preferences come from settings.options (the ``quick`` rows), so
+        their labels are the ones the Options dialog shows and a new quick
+        toggle needs no change here.
+        """
         window = self.window
         training_tools = ttk.LabelFrame(practice_row, text="Training", padding=(6, 4))
         training_tools.grid(row=0, column=0, sticky="nsew")
         training_tools.columnconfigure(0, weight=1)
         training_tools.columnconfigure(1, weight=1)
-        skip_first_checkbox = ttk.Checkbutton(
+        # Not a preference: it writes the skip flag on the open puzzle.
+        ttk.Checkbutton(
             training_tools,
             text="Skip first move",
             variable=window._skip_first_var,
             command=self._with_board_focus(window.toggle_current_skip),
             takefocus=False,
-        )
-        skip_first_checkbox.grid(row=0, column=0, sticky="w", padx=(0, 4), pady=(0, 1))
-        auto_next_checkbox = ttk.Checkbutton(
-            training_tools,
-            text="Auto next",
-            variable=window._auto_next_var,
-            command=self._with_board_focus(window.save_training_preferences),
-            takefocus=False,
-        )
-        auto_next_checkbox.grid(row=0, column=1, sticky="w", pady=(0, 1))
-        clean_comments_checkbox = ttk.Checkbutton(
-            training_tools,
-            text="Clean comments",
-            variable=window._clean_comments_var,
-            command=self._with_board_focus(window.on_clean_comments_changed),
-            takefocus=False,
-        )
-        clean_comments_checkbox.grid(row=1, column=0, sticky="w", padx=(0, 4))
-        pause_for_comment_checkbox = ttk.Checkbutton(
-            training_tools,
-            text="Pause for comment",
-            variable=window._pause_for_comment_var,
-            command=self._with_board_focus(window.save_training_preferences),
-            takefocus=False,
-        )
-        pause_for_comment_checkbox.grid(row=1, column=1, sticky="w")
+        ).grid(row=0, column=0, sticky="w", padx=(0, 4), pady=(0, 1))
+        # Two per row, continuing after the skip box in the first cell.
+        for position, option in enumerate(QUICK_OPTIONS, start=1):
+            row, column = divmod(position, 2)
+            variable = window._quick_vars[option.key]
+            ttk.Checkbutton(
+                training_tools,
+                text=option.label,
+                variable=variable,
+                command=self._with_board_focus(
+                    lambda key=option.key, var=variable: window.set_option(key, var.get())
+                ),
+                takefocus=False,
+            ).grid(
+                row=row,
+                column=column,
+                sticky="w",
+                padx=(0, 4) if column == 0 else 0,
+                pady=(0, 1) if row == 0 else 0,
+            )
 
     def _build_status_bar(self) -> None:
         window = self.window

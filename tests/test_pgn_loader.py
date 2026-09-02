@@ -239,7 +239,7 @@ def test_split_lines_yields_one_puzzle_per_variation_line() -> None:
 def test_split_lines_prunes_mistake_marked_variations() -> None:
     puzzles = PgnLoader().load(StringIO(REPERTOIRE_PGN), split_lines=True)
 
-    # 1...c5 is NAG-marked as a mistake: refutation content, not a line.
+    # 1...c5 is NAG-marked as a mistake: mistake_line content, not a line.
     assert all(chess.Move.from_uci("c7c5") not in p.moves for p in puzzles)
 
 

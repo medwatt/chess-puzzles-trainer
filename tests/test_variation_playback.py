@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import chess
 
-from chess_puzzles.app.refutation_playback import RefutationPlayback
+
+from chess_puzzles.app.variation_playback import VariationPlayback
 from chess_puzzles.puzzle import MoveResult, Puzzle, PuzzleSession
 
 
@@ -80,15 +81,22 @@ class FakeLayout:
 
 
 class FakeWindow:
-    def __init__(self, session: PuzzleSession, pause_for_comment: bool, pause_playback: bool = False) -> None:
+    def __init__(
+        self, session: PuzzleSession, stop_at_comments: bool = True, step_through: bool = False
+    ) -> None:
         self.session = session
         self.root = FakeRoot()
         self.audio = FakeAudio()
         self._layout = FakeLayout()
         self._status_var = FakeVar("")
-        self._pause_for_comment_var = FakeVar(pause_for_comment)
-        self._pause_playback_var = FakeVar(pause_playback)
+        self.options = {
+            "stop_at_comments": stop_at_comments,
+            "step_through_lines": step_through,
+        }
         self.comment_text = ""
+
+    def option(self, key: str):
+        return self.options[key]
 
     def _display_comment(self, comment: str) -> str:
         return comment
@@ -106,16 +114,16 @@ def _blundered_session() -> PuzzleSession:
         pgn_text=TREE_PGN,
     )
     session = PuzzleSession(puzzle, chess.WHITE)
-    assert session.play_user_move(chess.Move.from_uci("f2f3")) is MoveResult.BLUNDER
+    assert session.play_user_move(chess.Move.from_uci("f2f3")) is MoveResult.MISTAKE
     return session
 
 
 def test_playback_pauses_on_prose_and_rewinds_to_decision_point() -> None:
     session = _blundered_session()
-    window = FakeWindow(session, pause_for_comment=True)
-    playback = RefutationPlayback(window)
+    window = FakeWindow(session)
+    playback = VariationPlayback(window)
 
-    playback.start(session.last_refutation)
+    playback.start(session.last_mistake_line)
     # The annotated blunder move plays immediately and waits for the key.
     assert playback.active
     board_view = window._layout.board
@@ -145,11 +153,11 @@ def test_playback_pauses_on_prose_and_rewinds_to_decision_point() -> None:
 
 def test_dragged_blunder_does_not_reanimate_but_replies_do() -> None:
     session = _blundered_session()
-    window = FakeWindow(session, pause_for_comment=False)
-    playback = RefutationPlayback(window)
+    window = FakeWindow(session, stop_at_comments=False)
+    playback = VariationPlayback(window)
 
     # A dragged move arrives with animate=False, same as the correct-move path.
-    playback.start(session.last_refutation, animate_first=False)
+    playback.start(session.last_mistake_line, animate_first=False)
     window.root.fire()
     window.root.fire()
     window.root.fire()
@@ -158,12 +166,12 @@ def test_dragged_blunder_does_not_reanimate_but_replies_do() -> None:
     assert window._layout.board.flashed == [chess.Move.from_uci("f2f3")]
 
 
-def test_playback_autoplays_when_pause_for_comment_is_off() -> None:
+def test_playback_autoplays_when_stopping_at_comments_is_off() -> None:
     session = _blundered_session()
-    window = FakeWindow(session, pause_for_comment=False)
-    playback = RefutationPlayback(window)
+    window = FakeWindow(session, stop_at_comments=False)
+    playback = VariationPlayback(window)
 
-    playback.start(session.last_refutation)
+    playback.start(session.last_mistake_line)
     window.root.fire()
     window.root.fire()
     window.root.fire()
@@ -179,11 +187,11 @@ def test_coda_playback_rewinds_to_origin_then_returns_to_session_board() -> None
     puzzle_session.play_computer_move()
     assert puzzle_session.is_complete
 
-    window = FakeWindow(puzzle_session, pause_for_comment=False)
-    playback = RefutationPlayback(window)
-    (origin_fen, refutation), = puzzle_session.avoided_refutations()
+    window = FakeWindow(puzzle_session, stop_at_comments=False)
+    playback = VariationPlayback(window)
+    (origin_fen, mistake_line), = puzzle_session.avoided_mistakes()
 
-    playback.start(refutation, origin=chess.Board(origin_fen))
+    playback.start(mistake_line, origin=chess.Board(origin_fen))
     board_view = window._layout.board
     # First draw is the decision point itself (no move), then the trap plays.
     assert board_view.moves[0] is None
@@ -200,12 +208,12 @@ def test_coda_playback_rewinds_to_origin_then_returns_to_session_board() -> None
     assert not playback.active
 
 
-def test_pause_playback_setting_waits_on_every_move() -> None:
+def test_stepping_through_lines_waits_on_every_move() -> None:
     session = _blundered_session()
-    window = FakeWindow(session, pause_for_comment=False, pause_playback=True)
-    playback = RefutationPlayback(window)
+    window = FakeWindow(session, stop_at_comments=False, step_through=True)
+    playback = VariationPlayback(window)
 
-    playback.start(session.last_refutation)
+    playback.start(session.last_mistake_line)
     # Even silent moves wait for the continue key: no timers, ever.
     for expected_moves in (1, 2, 3):
         assert len(window._layout.board.moves) == expected_moves
@@ -218,10 +226,10 @@ def test_pause_playback_setting_waits_on_every_move() -> None:
 
 def test_cancel_stops_timers_and_deactivates() -> None:
     session = _blundered_session()
-    window = FakeWindow(session, pause_for_comment=False)
-    playback = RefutationPlayback(window)
+    window = FakeWindow(session, stop_at_comments=False)
+    playback = VariationPlayback(window)
 
-    playback.start(session.last_refutation)
+    playback.start(session.last_mistake_line)
     assert window.root.pending
     playback.cancel()
     assert not playback.active

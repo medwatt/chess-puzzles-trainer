@@ -71,12 +71,12 @@ class MainShortcuts:
     PREVIOUS_PUZZLE = Shortcut("<Left>", "Previous puzzle", TRAINING)
     RESET_PUZZLE = Shortcut("r", "Reset puzzle", TRAINING)
     SHOW_HINT = Shortcut("h", "Show hint", TRAINING)
-    PLAY_MOVE = Shortcut("m", "Play move for me", TRAINING)
+    PLAY_MOVE = Shortcut("m", "Continue / play move for me", TRAINING)
     GO_TO_PUZZLE = Shortcut("<Control-g>", "Go to puzzle...", TRAINING)
     START_THEME = Shortcut("<Control-t>", "Start theme...", TRAINING)
     TOGGLE_SKIP = Shortcut("<Control-Shift-K>", "Toggle skip first move", TRAINING)
-    TOGGLE_AUTO_NEXT = Shortcut("<Control-Shift-A>", "Toggle auto next", TRAINING)
-    TOGGLE_CLEAN_COMMENTS = Shortcut("<Control-Shift-L>", "Toggle clean comments", TRAINING)
+    TOGGLE_AUTO_NEXT = Shortcut("<Control-Shift-A>", "Toggle advance automatically", TRAINING)
+    TOGGLE_REFLOW_COMMENTS = Shortcut("<Control-Shift-L>", "Toggle reflow comment text", TRAINING)
     BOARD_VISION = Shortcut("<Control-Shift-V>", "Board vision", TRAINING)
     REVIEW_DECK = Shortcut("<Control-r>", "Review this deck", TRAINING)
     REVIEW_ALL = Shortcut("<Control-Shift-R>", "Review all due puzzles", TRAINING)
@@ -99,7 +99,7 @@ class MainShortcuts:
     OPEN_DATABASE = Shortcut("<Control-o>", "Open Course File...", DATABASE)
     OPEN_MOST_RECENT = Shortcut("<Control-KeyPress-1>", "Open most recent course", DATABASE)
     COURSE_LIBRARY = Shortcut("<Control-l>", "Course Library...", DATABASE)
-    ADD_COURSE = Shortcut("<Control-n>", "Add Course...", DATABASE)
+    ADD_COURSE = Shortcut("<Control-n>", "Create tactics course from PGN...", DATABASE)
     SAVE_FAVORITE = Shortcut("s", "Toggle favorite", DATABASE)
     DELETE_CURRENT_PUZZLE = Shortcut("<Control-Delete>", "Delete puzzle", DATABASE)
     SHOW_PGN = Shortcut("<Control-p>", "Show PGN viewer", DATABASE)
@@ -109,6 +109,7 @@ class MainShortcuts:
 
     # Application
     SHOW_SHORTCUTS = Shortcut("?", "Keyboard shortcuts", APPLICATION)
+    CONFIGURE_OPTIONS = Shortcut("<Control-comma>", "Options...", APPLICATION)
     CONFIGURE_PATHS = Shortcut("<Control-Shift-D>", "Paths...", APPLICATION)
     EXIT = Shortcut("<Control-q>", "Quit", APPLICATION)
 
@@ -178,3 +179,8 @@ MENU_ACCELERATORS: dict[str, str] = {
     str(shortcut): accelerator_text(shortcut) for shortcut in registered_shortcuts()
 }
 SHORTCUT_HELP_SECTIONS = _build_help_sections()
+
+# The key that clears whatever the app is waiting on: a shown line, an
+# unread comment, a mistake offered for review. Status messages format it
+# from the binding above so rebinding PLAY_MOVE updates every message.
+CONTINUE_KEY: str = accelerator_text(MainShortcuts.PLAY_MOVE)

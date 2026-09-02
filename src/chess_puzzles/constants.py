@@ -18,9 +18,9 @@ FLASH_CORRECT_COLOR: str = "#2f8f46"
 
 # Engine timing
 COMPUTER_REPLY_DELAY_MS: int = 350
-# Refutation playback is a lesson, not a reply: each move needs to register
+# MistakeLine playback is a lesson, not a reply: each move needs to register
 # before the next lands, so it paces slower than ordinary computer replies.
-REFUTATION_STEP_DELAY_MS: int = 900
+PLAYBACK_STEP_DELAY_MS: int = 900
 # The prefix recap replays moves the user already knows from the previous
 # line, so it paces between a reply and a lesson: quick enough to feel like
 # momentum, slow enough to follow.

@@ -34,11 +34,11 @@ def test_refutation_carries_line_and_comments() -> None:
     bad = tree.root.child(chess.Move.from_uci("f2f3"))
     assert bad is not None
 
-    refutation = MoveTree.refutation_of(bad)
-    assert refutation.move == chess.Move.from_uci("f2f3")
-    assert [m.uci() for m in refutation.line] == ["e7e5", "g2g4", "d8h4"]
-    assert refutation.comments[0] == "weakens"
-    assert refutation.comments[-1] == "mate"
+    mistake_line = MoveTree.mistake_line_of(bad)
+    assert mistake_line.move == chess.Move.from_uci("f2f3")
+    assert [m.uci() for m in mistake_line.line] == ["e7e5", "g2g4", "d8h4"]
+    assert mistake_line.comments[0] == "weakens"
+    assert mistake_line.comments[-1] == "mate"
 
 
 def test_tree_absent_for_empty_or_mismatched_pgn() -> None:

@@ -41,28 +41,31 @@ class MainMenuBuilder:
 
         # Course menu
         database_menu = tk.Menu(menu_bar, tearoff=False)
-        database_menu.add_command(
-            label="Add Course...",
-            accelerator=MENU_ACCELERATORS[MainShortcuts.ADD_COURSE],
-            command=window.add_course,
-        )
-        database_menu.add_separator()
+        # Two ways to get a course: import a PGN you have, or generate one
+        # from the Lichess database. Generators live in their own submenu so
+        # a new one does not lengthen this menu. The Add Course picker is not
+        # repeated here -- it offers exactly the two entries below it, and is
+        # what the welcome screen's button opens.
         database_menu.add_command(
             label="Create tactics course from PGN...",
+            accelerator=MENU_ACCELERATORS[MainShortcuts.ADD_COURSE],
             command=window.create_database_from_pgn,
         )
         database_menu.add_command(
             label="Import opening course...",
             command=window.import_opening_course,
         )
-        database_menu.add_command(
-            label="Import from Lichess CSV...",
+        generate_menu = tk.Menu(database_menu, tearoff=False)
+        generate_menu.add_command(
+            label="Sample puzzles...",
             command=window.import_lichess_csv,
         )
-        database_menu.add_command(
-            label="Generate blunder puzzles...",
+        generate_menu.add_command(
+            label="Blunder puzzles...",
             command=window.generate_blunder_puzzles,
         )
+        database_menu.add_cascade(label="Generate from Lichess", menu=generate_menu)
+        database_menu.add_separator()
         database_menu.add_command(
             label="Edit current...",
             command=window.edit_current_database,
@@ -238,61 +241,20 @@ class MainMenuBuilder:
         self._piece_theme_menu = tk.Menu(settings_menu, tearoff=False)
         self.refresh_piece_theme_menu()
         settings_menu.add_cascade(label="Piece Set", menu=self._piece_theme_menu)
-        settings_menu.add_checkbutton(
-            label="Show coordinates",
-            accelerator=MENU_ACCELERATORS[MainShortcuts.TOGGLE_COORDINATES],
-            variable=window._coordinates_var,
-            command=window.on_coordinates_changed,
+        settings_menu.add_command(
+            label="Choose font...",
+            command=window.choose_font,
         )
-        settings_menu.add_checkbutton(
-            label="Show PGN after solving",
-            variable=window._show_pgn_after_solve_var,
-            command=window.on_show_pgn_after_solve_changed,
-        )
-        settings_menu.add_checkbutton(
-            label="Pause playback on every move",
-            variable=window._pause_playback_var,
-            command=window.save_training_preferences,
-        )
-        settings_menu.add_checkbutton(
-            label="Start course lines at divergence",
-            variable=window._start_at_divergence_var,
-            command=window.on_start_at_divergence_changed,
-        )
-        settings_menu.add_checkbutton(
-            label="Demonstrate new lines first",
-            variable=window._demonstrate_var,
-            command=window.save_training_preferences,
-        )
-        settings_menu.add_checkbutton(
-            label="Show evaluation bar",
-            accelerator=MENU_ACCELERATORS[MainShortcuts.TOGGLE_EVALUATION_BAR],
-            variable=window._show_evaluation_bar_var,
-            command=window.on_show_evaluation_bar_changed,
-        )
-        settings_menu.add_checkbutton(
-            label="Show session stats",
-            variable=window._show_session_stats_var,
-            command=window.on_show_session_stats_changed,
-        )
-        settings_menu.add_checkbutton(
-            label="Show user notes",
-            variable=window._show_user_notes_var,
-            command=window.toggle_user_notes,
-        )
-        settings_menu.add_checkbutton(
-            label="Play sound",
-            variable=window._play_sound_var,
-            command=window.toggle_play_sound,
+        settings_menu.add_separator()
+        settings_menu.add_command(
+            label="Options...",
+            accelerator=MENU_ACCELERATORS[MainShortcuts.CONFIGURE_OPTIONS],
+            command=window.configure_options,
         )
         settings_menu.add_command(
             label="Paths...",
             accelerator=MENU_ACCELERATORS[MainShortcuts.CONFIGURE_PATHS],
             command=window.configure_paths,
-        )
-        settings_menu.add_command(
-            label="Choose font...",
-            command=window.choose_font,
         )
         menu_bar.add_cascade(label="Settings", menu=settings_menu)
 
@@ -347,7 +309,7 @@ class MainMenuBuilder:
             MainShortcuts.OPEN_DATABASE: window.open_database,
             MainShortcuts.OPEN_MOST_RECENT: window.open_most_recent_course,
             MainShortcuts.COURSE_LIBRARY: window.open_course_library,
-            MainShortcuts.ADD_COURSE: window.add_course,
+            MainShortcuts.ADD_COURSE: window.create_database_from_pgn,
             MainShortcuts.SAVE_FAVORITE: window.toggle_current_favorite,
             MainShortcuts.DELETE_CURRENT_PUZZLE: window.delete_current_puzzle,
             MainShortcuts.CLEAR_MARKS: window.clear_marks,
@@ -365,10 +327,11 @@ class MainMenuBuilder:
             MainShortcuts.TOGGLE_HANGING_OVERLAY: window.toggle_hanging_overlay,
             MainShortcuts.TOGGLE_CONTESTED_OVERLAY: window.toggle_contested_overlay,
             MainShortcuts.TOGGLE_SKIP: window.toggle_current_skip,
-            MainShortcuts.TOGGLE_AUTO_NEXT: window.toggle_auto_next,
-            MainShortcuts.TOGGLE_CLEAN_COMMENTS: window.toggle_clean_comments,
+            MainShortcuts.TOGGLE_AUTO_NEXT: lambda: window.toggle_option("auto_advance"),
+            MainShortcuts.TOGGLE_REFLOW_COMMENTS: lambda: window.toggle_option("reflow_comments"),
             MainShortcuts.GO_TO_PUZZLE: window.go_to_puzzle,
             MainShortcuts.START_THEME: window.start_theme,
+            MainShortcuts.CONFIGURE_OPTIONS: window.configure_options,
             MainShortcuts.CONFIGURE_PATHS: window.configure_paths,
             MainShortcuts.CONFIGURE_ENGINES: window.configure_engines,
             MainShortcuts.TOGGLE_ENGINE_ANALYSIS: window.toggle_engine_analysis,
@@ -376,8 +339,8 @@ class MainMenuBuilder:
             MainShortcuts.BOARD_VISION: window.open_board_vision_window,
             MainShortcuts.REVIEW_DECK: window.review_mistakes_this_deck,
             MainShortcuts.REVIEW_ALL: window.review_all_mistakes,
-            MainShortcuts.TOGGLE_COORDINATES: window.toggle_coordinates,
-            MainShortcuts.TOGGLE_EVALUATION_BAR: window.toggle_show_evaluation_bar,
+            MainShortcuts.TOGGLE_COORDINATES: lambda: window.toggle_option("show_coordinates"),
+            MainShortcuts.TOGGLE_EVALUATION_BAR: lambda: window.toggle_option("show_evaluation_bar"),
             MainShortcuts.SHOW_SHORTCUTS: window.show_shortcuts_help,
             MainShortcuts.EXIT: window.close,
         }

@@ -70,21 +70,20 @@ class MainDatabaseActions:
         return self.window.state.settings.default_database_directory or str(Path.home())
 
     def add_course(self) -> None:
-        choices = (
-            "Tactics course from PGN",
-            "Opening course from PGN",
-            "Lichess puzzles from CSV",
-            "Generated blunder course",
-        )
-        choice = ChoiceDialog(
-            self.window.root, "Add Course", "Course source:", list(choices), default=choices[0]
-        ).show_modal()
+        """Import a PGN you already have.
+
+        Courses generated from the Lichess database are not offered here:
+        they need their own prerequisites and options, and live under
+        Courses > Generate from Lichess.
+        """
         actions = {
-            choices[0]: self.create_database_from_pgn,
-            choices[1]: self.import_opening_course,
-            choices[2]: self.import_lichess_csv,
-            choices[3]: self.generate_blunder_puzzles,
+            "Tactics course from PGN": self.create_database_from_pgn,
+            "Opening course from PGN": self.import_opening_course,
         }
+        choices = list(actions)
+        choice = ChoiceDialog(
+            self.window.root, "Add Course", "Course source:", choices, default=choices[0]
+        ).show_modal()
         if choice is not None:
             actions[choice]()
 

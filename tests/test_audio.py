@@ -29,7 +29,7 @@ def test_normal_puzzle_move_emits_exactly_one_sound() -> None:
         ),
         chess.WHITE,
     )
-    window._refutation_playback = SimpleNamespace(active=False)
+    window._playback = SimpleNamespace(active=False)
     window._engaged = False
     window.audio = _RecordingAudio()
     window._layout = SimpleNamespace(

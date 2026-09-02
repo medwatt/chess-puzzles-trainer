@@ -16,8 +16,8 @@ class MoveResult(Enum):
     # unmarked sibling line (acceptable, but not the drilled line) ...
     ALTERNATIVE = "alternative"
     # ... or a variation whose first move is NAG-marked ?/??/?! -- a known
-    # mistake with a recorded refutation (see puzzle.tree).
-    BLUNDER = "blunder"
+    # mistake whose punishing line is recorded (see puzzle.tree).
+    MISTAKE = "mistake"
 
 
 @dataclass(frozen=True, slots=True)
