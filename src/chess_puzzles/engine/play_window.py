@@ -18,11 +18,19 @@ from chess_puzzles.engine.config import EngineDefinition
 from chess_puzzles.engine.play_controller import EnginePlayController
 from chess_puzzles.engine.play_session import EnginePlaySession
 from chess_puzzles.platform.audio import AudioPlayer
+from chess_puzzles.shortcuts import ENGINE_MOVE_KEY, PlayShortcuts
 from chess_puzzles.ui.window import fit_window
 
 
 class EnginePlayWindow(tk.Toplevel):
-    """Free-play window where the user plays a position against the engine."""
+    """Free-play window where the user plays a position against the engine.
+
+    Two ways to use it, chosen with the auto-reply checkbox. With it on the
+    engine answers every move, which is what makes it a refutation board: you
+    play the move you believed in and watch it punished. With it off nothing
+    moves unless asked, so the same board becomes an exploration one -- you
+    play both sides and call the engine when you want its opinion.
+    """
 
     def __init__(
         self,
@@ -46,7 +54,8 @@ class EnginePlayWindow(tk.Toplevel):
         self._thinking = False
         self._engine_after_id: str | None = None
         self._best_move_hint: chess.Move | None = None
-        self.status_var = tk.StringVar(value="Your move.")
+        self._auto_reply_var = tk.BooleanVar(value=True)
+        self.status_var = tk.StringVar()
 
         root = ttk.Frame(self, padding=(8, 8, 8, 0))
         root.pack(fill=tk.BOTH, expand=True)
@@ -66,15 +75,35 @@ class EnginePlayWindow(tk.Toplevel):
         self.board.set_orientation(human_color)
         self.evaluation_bar.set_flipped(human_color == chess.BLACK)
         BoardShortcuts(self, self.board).bind()
+        for sequence, action in (
+            (PlayShortcuts.ENGINE_MOVE, self.engine_move),
+            (PlayShortcuts.TAKEBACK, self.takeback),
+            (PlayShortcuts.RESET_POSITION, self.reset_position),
+            (PlayShortcuts.SHOW_BEST_MOVE, self.show_best_move),
+        ):
+            self.bind(sequence, lambda _event, run=action: run())
 
+        # Left: what you do, most-used first. Right: how the window behaves.
+        # Closing is left to the title bar, as on any modeless window.
         controls = ttk.Frame(root)
         controls.grid(row=1, column=0, sticky="ew", pady=(8, 0))
-        ttk.Button(controls, text="Reset Position", command=self.reset_position, takefocus=False).pack(side=tk.LEFT)
-        ttk.Button(controls, text="Takeback", command=self.takeback, takefocus=False).pack(side=tk.LEFT, padx=(8, 0))
-        ttk.Button(controls, text="Engine Move", command=self.engine_move, takefocus=False).pack(
+        self._engine_move_button = ttk.Button(
+            controls, text="Engine Move", command=self.engine_move, takefocus=False
+        )
+        self._engine_move_button.pack(side=tk.LEFT)
+        ttk.Button(controls, text="Takeback", command=self.takeback, takefocus=False).pack(
             side=tk.LEFT, padx=(8, 0)
         )
-        ttk.Button(controls, text="Close", command=self.close, takefocus=False).pack(side=tk.RIGHT)
+        ttk.Button(
+            controls, text="Reset Position", command=self.reset_position, takefocus=False
+        ).pack(side=tk.LEFT, padx=(8, 0))
+        ttk.Checkbutton(
+            controls,
+            text="Engine replies automatically",
+            variable=self._auto_reply_var,
+            command=self._on_auto_reply_changed,
+            takefocus=False,
+        ).pack(side=tk.RIGHT)
 
         ttk.Label(self, textvariable=self.status_var, anchor=tk.W, padding=(8, 3), relief=tk.SUNKEN).pack(
             fill=tk.X,
@@ -84,9 +113,7 @@ class EnginePlayWindow(tk.Toplevel):
         self.protocol("WM_DELETE_WINDOW", self.close)
         self.bind("<Destroy>", self._on_destroy)
         self._refresh_board(snap=True)
-        self._request_position_analysis()
-        if not self.session.is_human_turn:
-            self._schedule_engine_move()
+        self._continue_after_move()
         self.after(ENGINE_POLL_INTERVAL_MS, self._poll_engine_results)
         fit_window(self, PLAY_WINDOW_GEOMETRY)
 
@@ -95,11 +122,10 @@ class EnginePlayWindow(tk.Toplevel):
         self._cancel_engine()
         self._best_move_hint = None
         self.evaluation_bar.clear()
-        self.status_var.set("Position reset. Your move.")
         self._refresh_board(snap=True)
-        self._request_position_analysis()
-        if not self.session.is_human_turn:
-            self._schedule_engine_move()
+        self._continue_after_move()
+        if not self._thinking:
+            self._set_status(f"Position reset. {self._turn_status()}")
 
     def close(self) -> None:
         self.controller.shutdown()
@@ -119,7 +145,7 @@ class EnginePlayWindow(tk.Toplevel):
         if accepted is None:
             self._audio.play_error()
             self.board.flash_move(move)
-            self.status_var.set("Illegal move.")
+            self._set_status("Illegal move.")
             return
         # Any accepted move (own or forced for the engine) invalidates scheduled
         # engine moves and in-flight analysis of the previous position.
@@ -129,49 +155,97 @@ class EnginePlayWindow(tk.Toplevel):
         hint = self._best_move_hint
         self._best_move_hint = None
         if hint is not None and hint != accepted:
-            self.board.set_annotations(
-                BoardAnnotations(arrows=(ArrowAnnotation(hint.from_square, hint.to_square, AnnotationColor.YELLOW),))
-            )
-        if self.session.board.is_game_over():
-            self.status_var.set(self._game_over_text())
-            return
-        if self.session.is_human_turn:
-            self.status_var.set("Your move.")
-            self._request_position_analysis()
-        else:
-            self._schedule_engine_move()
+            self._show_move_arrow(hint)
+        self._continue_after_move()
 
     def takeback(self) -> None:
         if self.session.takeback() is None:
-            self.status_var.set("Nothing to take back.")
+            self._set_status("Nothing to take back.")
             return
         self._cancel_engine()
         self._best_move_hint = None
         self._refresh_board(snap=True)
+        self._continue_after_move()
+
+    def _continue_after_move(self) -> None:
+        """Whose turn it now is, and whether anything happens by itself.
+
+        The engine only takes its turn unasked while auto-reply is on; the
+        rest of the time the position simply sits there, analysed, waiting
+        for whichever side the user wants to move.
+        """
+        if self.session.board.is_game_over():
+            self._set_status(self._game_over_text())
+            return
+        if not self.session.is_human_turn and self._auto_reply_var.get():
+            self._schedule_engine_move()
+            return
         self._request_position_analysis()
+        self._set_status(self._turn_status())
+
+    def _turn_status(self) -> str:
         if self.session.is_human_turn:
-            self.status_var.set("Your move.")
-        else:
-            self.status_var.set("Engine's turn: play its move yourself, or press Engine Move.")
+            return "Your move."
+        return f"Engine's turn - press {ENGINE_MOVE_KEY} for its move, or play it yourself."
+
+    def _on_auto_reply_changed(self) -> None:
+        """Switching it back on lets the engine catch up on the move it owes."""
+        if not self._auto_reply_var.get():
+            self._cancel_engine()
+        self._continue_after_move()
+
+    def show_best_move(self) -> None:
+        move = self._best_move_hint
+        if move is None or move not in self.session.board.legal_moves:
+            self._set_status("No engine suggestion for this position yet.")
+            return
+        self._show_move_arrow(move)
+        self._set_status(f"Engine suggests {self.session.board.san(move)}.")
+
+    def _show_move_arrow(self, move: chess.Move) -> None:
+        self.board.set_annotations(
+            BoardAnnotations(
+                arrows=(ArrowAnnotation(move.from_square, move.to_square, AnnotationColor.YELLOW),)
+            )
+        )
+
+    def _set_status(self, text: str) -> None:
+        """Every status change settles the Engine Move button too, so the
+        button can never claim to be available when it is not."""
+        self.status_var.set(text)
+        self._engine_move_button.configure(
+            state=tk.NORMAL if self._engine_can_move else tk.DISABLED
+        )
+
+    @property
+    def _engine_can_move(self) -> bool:
+        return (
+            not self._thinking
+            and not self.session.is_human_turn
+            and not self.session.board.is_game_over()
+        )
 
     def engine_move(self) -> None:
+        # Reachable from the keyboard even when the button is disabled.
         if self._thinking:
-            self.status_var.set("Engine is thinking.")
+            return  # already on its way, and the status already says so
+        if not self._engine_can_move:
+            self._set_status(
+                self._game_over_text()
+                if self.session.board.is_game_over()
+                else "It is your move."
+            )
             return
-        if self.session.board.is_game_over():
-            self.status_var.set(self._game_over_text())
-            return
-        if self.session.is_human_turn:
-            self.status_var.set("It is your move.")
-            return
-        self._thinking = True
-        self.status_var.set("Engine thinking...")
+        self._begin_thinking()
         self.controller.request_move(self.session.board)
 
     def _schedule_engine_move(self) -> None:
-        self._thinking = True
-        self.status_var.set("Engine thinking...")
+        self._begin_thinking()
         self._engine_after_id = self.after(COMPUTER_REPLY_DELAY_MS, self._request_engine_move)
+
+    def _begin_thinking(self) -> None:
+        self._thinking = True
+        self._set_status("Engine thinking...")
 
     def _request_engine_move(self) -> None:
         self._engine_after_id = None
@@ -192,7 +266,7 @@ class EnginePlayWindow(tk.Toplevel):
             self._thinking = False
             if result.error:
                 self.evaluation_bar.clear("!")
-                self.status_var.set(f"Engine error: {result.error}")
+                self._set_status(f"Engine error: {result.error}")
                 continue
             if result.kind == "analyse":
                 self.evaluation_bar.set_score(result.score)
@@ -200,21 +274,17 @@ class EnginePlayWindow(tk.Toplevel):
                 continue
             if result.move is None:
                 self.evaluation_bar.set_score(result.score)
-                self.status_var.set("Engine did not return a move.")
+                self._set_status("Engine did not return a move.")
                 continue
             self.evaluation_bar.set_score(result.score)
             board_before = self.session.board.copy(stack=False)
             if not self.session.play_engine_move(result.move):
                 self._audio.play_error()
-                self.status_var.set("Engine returned an illegal move.")
+                self._set_status("Engine returned an illegal move.")
                 continue
             self._audio.play_move(board_before, result.move, self.session.board)
             self._refresh_board(animated_move=result.move)
-            if self.session.board.is_game_over():
-                self.status_var.set(self._game_over_text())
-            else:
-                self.status_var.set("Your move.")
-                self._request_position_analysis()
+            self._continue_after_move()
         if self.winfo_exists():
             self.after(ENGINE_POLL_INTERVAL_MS, self._poll_engine_results)
 

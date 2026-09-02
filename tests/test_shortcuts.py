@@ -5,6 +5,7 @@ from chess_puzzles.shortcuts import (
     SHORTCUT_HELP_SECTIONS,
     DatabaseShortcuts,
     MainShortcuts,
+    PlayShortcuts,
     accelerator_text,
     registered_shortcuts,
 )
@@ -18,7 +19,7 @@ def test_every_shortcut_is_in_the_help_dialog_and_accelerator_map() -> None:
 
 
 def test_no_conflicting_sequences_within_a_window() -> None:
-    for owner in (MainShortcuts, DatabaseShortcuts):
+    for owner in (MainShortcuts, PlayShortcuts, DatabaseShortcuts):
         sequences = [str(shortcut) for shortcut in registered_shortcuts(owner)]
         duplicates = {sequence for sequence in sequences if sequences.count(sequence) > 1}
         assert not duplicates, f"{owner.__name__} binds the same sequence twice: {duplicates}"

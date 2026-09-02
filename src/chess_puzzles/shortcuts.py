@@ -54,6 +54,7 @@ TRAINING = "Training"
 BOARD = "Board & insights"
 ENGINE = "Engine"
 DATABASE = "Database & files"
+PLAY = "Play vs engine"
 APPLICATION = "Application"
 MANAGER = "Database manager"
 
@@ -114,6 +115,19 @@ class MainShortcuts:
     EXIT = Shortcut("<Control-q>", "Quit", APPLICATION)
 
 
+class PlayShortcuts:
+    """Shortcuts owned by the play-vs-engine window.
+
+    Bare letters keep the meaning they have in the main window: r resets the
+    position, h asks the engine what it would play.
+    """
+
+    ENGINE_MOVE = Shortcut("<space>", "Play the engine's move", PLAY)
+    TAKEBACK = Shortcut("<Control-z>", "Take back a move", PLAY)
+    RESET_POSITION = Shortcut("r", "Reset position", PLAY)
+    SHOW_BEST_MOVE = Shortcut("h", "Show the engine's best move", PLAY)
+
+
 class DatabaseShortcuts:
     """Shortcuts owned by the database manager dialog."""
 
@@ -161,7 +175,7 @@ def accelerator_text(sequence: str) -> str:
 def registered_shortcuts(*owners: type) -> list[Shortcut]:
     """All Shortcut declarations on the given classes, in definition order."""
     found: list[Shortcut] = []
-    for owner in owners or (MainShortcuts, DatabaseShortcuts):
+    for owner in owners or (MainShortcuts, PlayShortcuts, DatabaseShortcuts):
         found.extend(value for value in vars(owner).values() if isinstance(value, Shortcut))
     return found
 
@@ -184,3 +198,6 @@ SHORTCUT_HELP_SECTIONS = _build_help_sections()
 # unread comment, a mistake offered for review. Status messages format it
 # from the binding above so rebinding PLAY_MOVE updates every message.
 CONTINUE_KEY: str = accelerator_text(MainShortcuts.PLAY_MOVE)
+
+# The key that asks the engine to take its turn in the play window.
+ENGINE_MOVE_KEY: str = accelerator_text(PlayShortcuts.ENGINE_MOVE)
