@@ -4,6 +4,7 @@ import tkinter as tk
 from tkinter import messagebox, simpledialog, ttk
 
 from chess_puzzles.constants import DATABASE_MANAGER_GEOMETRY
+from chess_puzzles.dialogs.choice import ChoiceDialog
 from chess_puzzles.puzzle import Puzzle
 from chess_puzzles.shortcuts import MENU_ACCELERATORS, DatabaseShortcuts
 from chess_puzzles.store import ContentDatabase
@@ -19,6 +20,9 @@ class DatabaseManagerDialog(tk.Toplevel):
         super().__init__(parent, name="databasemanager", class_="ChessPuzzlesDatabaseManager")
         self.database = database
         self.new_name: str | None = None
+        # PGN tags per row, keyed by ordinal (the row iid): the source for
+        # "Set theme from tag...". Rows carry only display values.
+        self._headers: dict[int, dict[str, str]] = {}
         self.title(f"Course Editor - {database.meta.name}")
         self.transient(parent)
         self.accepted = False
@@ -44,8 +48,6 @@ class DatabaseManagerDialog(tk.Toplevel):
             DatabaseShortcuts.CLEAR_SELECTED_SKIP: lambda: self._set_skip_for_rows(self.table.selection(), False),
             DatabaseShortcuts.SET_SELECTED_THEME: self._set_theme_selected,
             DatabaseShortcuts.CLEAR_SELECTED_THEME: lambda: self._set_theme_selected(""),
-            DatabaseShortcuts.SET_THEME_FROM_WHITE: lambda: self._set_theme_from_column("white"),
-            DatabaseShortcuts.SET_THEME_FROM_BLACK: lambda: self._set_theme_from_column("black"),
         }
         for sequence, action in bindings.items():
             self.bind(sequence, lambda _event, callback=action: (callback(), "break")[1])
@@ -109,14 +111,8 @@ class DatabaseManagerDialog(tk.Toplevel):
         )
         theme_menu.add_separator()
         theme_menu.add_command(
-            label="Set theme from White",
-            accelerator=MENU_ACCELERATORS[DatabaseShortcuts.SET_THEME_FROM_WHITE],
-            command=lambda: self._set_theme_from_column("white"),
-        )
-        theme_menu.add_command(
-            label="Set theme from Black",
-            accelerator=MENU_ACCELERATORS[DatabaseShortcuts.SET_THEME_FROM_BLACK],
-            command=lambda: self._set_theme_from_column("black"),
+            label="Set theme from tag...",
+            command=self._set_theme_from_tag,
         )
         menubar.add_cascade(label="Theme", menu=theme_menu)
         self.config(menu=menubar)
@@ -158,6 +154,7 @@ class DatabaseManagerDialog(tk.Toplevel):
         self.summary_var.set(self._summary_text(len(self.table.get_children())))
 
     def _insert_puzzle(self, puzzle: Puzzle) -> None:
+        self._headers[puzzle.ordinal] = puzzle.headers
         self.table.insert(
             "",
             tk.END,
@@ -195,6 +192,7 @@ class DatabaseManagerDialog(tk.Toplevel):
             return
         for row_id in rows:
             self.table.delete(row_id)
+            self._headers.pop(int(row_id), None)
         self.summary_var.set(self._summary_text(len(self.table.get_children())))
 
     def _rename_database(self) -> None:
@@ -229,12 +227,35 @@ class DatabaseManagerDialog(tk.Toplevel):
             values[self.COLUMNS.index("theme")] = theme.strip()
             self.table.item(row_id, values=values)
 
-    def _set_theme_from_column(self, source_column: str) -> None:
-        source_index = self.COLUMNS.index(source_column)
+    def _set_theme_from_tag(self) -> None:
+        """Fill the theme of the rows in scope from one of their PGN tags.
+
+        Exporters scatter pattern/motif names across different tags, so the
+        offered names are whatever the puzzles in scope actually carry rather
+        than a fixed list. With nothing selected the whole deck is in scope:
+        assigning themes is normally one pass over a freshly imported course.
+        """
+        selected = list(self.table.selection())
+        rows = selected or list(self.table.get_children())
+        if not rows:
+            return
+        tags = sorted({tag for row_id in rows for tag in self._headers.get(int(row_id), {})})
+        if not tags:
+            messagebox.showinfo(
+                "Set theme from tag", "These puzzles have no PGN tags.", parent=self
+            )
+            return
+        scope = f"{len(rows)} selected" if selected else f"all {len(rows)}"
+        tag = ChoiceDialog(
+            self, "Set theme from tag", f"Set the theme of {scope} puzzle(s) from:", tags
+        ).show_modal()
+        if not tag:
+            return
         theme_index = self.COLUMNS.index("theme")
-        for row_id in self.table.selection():
+        for row_id in rows:
+            value = self._headers.get(int(row_id), {}).get(tag, "").strip()
             values = list(self.table.item(row_id, "values"))
-            values[theme_index] = str(values[source_index]).strip()
+            values[theme_index] = "" if value == "?" else value
             self.table.item(row_id, values=values)
 
     def _sort_by(self, column: str, numeric: bool = False) -> None:

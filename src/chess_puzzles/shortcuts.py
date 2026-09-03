@@ -138,8 +138,6 @@ class DatabaseShortcuts:
     CLEAR_SELECTED_SKIP = Shortcut("<Control-Shift-K>", "Clear skip on selected", MANAGER)
     SET_SELECTED_THEME = Shortcut("<Control-t>", "Set theme on selected...", MANAGER)
     CLEAR_SELECTED_THEME = Shortcut("<Control-BackSpace>", "Clear theme on selected", MANAGER)
-    SET_THEME_FROM_WHITE = Shortcut("<Control-Shift-W>", "Theme from White header", MANAGER)
-    SET_THEME_FROM_BLACK = Shortcut("<Control-Shift-B>", "Theme from Black header", MANAGER)
 
 
 _KEY_DISPLAY = {
