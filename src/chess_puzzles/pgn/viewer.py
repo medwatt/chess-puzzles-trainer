@@ -41,7 +41,7 @@ class PgnViewer(tk.Toplevel):
         self,
         parent: tk.Misc,
         puzzle: Puzzle,
-        pgn_text: str,
+        canonical_pgn: str,
         *,
         presenter: BoardPresenter,
         player_color: chess.Color,
@@ -51,7 +51,7 @@ class PgnViewer(tk.Toplevel):
         self.title(f"PGN - {puzzle.title}")
         # Modeless work window: keep native minimize/maximize controls.
         self._theme = theme
-        self.game = chess.pgn.read_game(io.StringIO(pgn_text))
+        self.game = chess.pgn.read_game(io.StringIO(canonical_pgn))
         self._nodes: list[_ViewNode] = []
         self.current_position = 0
         self._at_line_start = True

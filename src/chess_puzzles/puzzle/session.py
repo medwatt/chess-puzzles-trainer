@@ -17,7 +17,7 @@ class PuzzleSession:
     sounds, or persistence.
 
     Deviations from the drilled line are classified against the puzzle's
-    variation tree (rebuilt from ``pgn_text``): an author-marked mistake is a
+    variation tree (rebuilt from ``canonical_pgn``): an author-marked mistake is a
     MISTAKE carrying the line that punishes it; an unmarked sibling with a continuation
     is an ALTERNATIVE; an unmarked sibling that ends immediately is an
     accepted final answer (COMPLETE); anything off-tree is INCORRECT as
@@ -42,7 +42,9 @@ class PuzzleSession:
 
     def __post_init__(self) -> None:
         self.board = chess.Board(self.puzzle.initial_fen)
-        self._tree = MoveTree.from_pgn_text(self.puzzle.pgn_text, self.puzzle.initial_fen)
+        self._tree = MoveTree.from_canonical_pgn(
+            self.puzzle.canonical_pgn, self.puzzle.initial_fen
+        )
         self._tree_node = self._tree.root if self._tree is not None else None
 
     @property
@@ -139,7 +141,7 @@ class PuzzleSession:
         self.move_index += 1
         # An off-tree move parks the cursor at None and every later lookup
         # degenerates to INCORRECT; only mainline moves are ever pushed, so
-        # this happens only when pgn_text disagrees with puzzle.moves.
+        # this happens only when canonical_pgn disagrees with puzzle.moves.
         self._tree_node = self._tree_node.child(move) if self._tree_node is not None else None
 
     def avoided_mistakes(self) -> list[tuple[str, MistakeLine]]:

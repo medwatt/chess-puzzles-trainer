@@ -89,7 +89,7 @@ class MainDatabaseActions:
 
     @staticmethod
     def _puzzle_has_branches(puzzle: Puzzle) -> bool:
-        tree = MoveTree.from_pgn_text(puzzle.pgn_text, puzzle.initial_fen)
+        tree = MoveTree.from_canonical_pgn(puzzle.canonical_pgn, puzzle.initial_fen)
         return tree is not None and tree.has_branches
 
     def edit_current_database(self) -> None:

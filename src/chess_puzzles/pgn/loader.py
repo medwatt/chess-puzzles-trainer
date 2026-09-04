@@ -73,7 +73,8 @@ class PgnLoader:
             moves=moves,
             comments=comments,
             headers=headers,
-            pgn_text=self._full_pgn_text(game),
+            canonical_pgn=self._canonical_pgn(game),
+            source_game_ordinal=source_index,
             ordinal=source_index,
             player_color=player_color,
             skip_first_move=infer_skip_first_move(initial_fen, moves, player_color),
@@ -102,7 +103,7 @@ class PgnLoader:
         player_color = self._player_color(headers, choices)
         base_title = self._title(headers, source_index, choices)
         theme = self._header_value(headers, choices.chapter_field) or base_title
-        pgn_text = self._full_pgn_text(game)
+        canonical_pgn = self._canonical_pgn(game)
         puzzles: list[Puzzle] = []
         for line_index, (moves, comments) in enumerate(lines, start=1):
             title = (
@@ -115,7 +116,8 @@ class PgnLoader:
                     moves=moves,
                     comments=comments,
                     headers=headers,
-                    pgn_text=pgn_text,
+                    canonical_pgn=canonical_pgn,
+                    source_game_ordinal=source_index,
                     ordinal=source_index,
                     player_color=player_color,
                     skip_first_move=infer_skip_first_move(initial_fen, moves, player_color),
@@ -246,7 +248,7 @@ class PgnLoader:
             return
         comments[-1] = f"{comments[-1]}\n\n{text}".strip() if comments[-1] else text
 
-    def _full_pgn_text(self, game: chess.pgn.Game) -> str:
+    def _canonical_pgn(self, game: chess.pgn.Game) -> str:
         exporter = chess.pgn.StringExporter(headers=True, variations=True, comments=True)
         return game.accept(exporter)
 

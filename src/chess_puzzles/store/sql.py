@@ -2,22 +2,28 @@ from __future__ import annotations
 
 
 CONTENT_SCHEMA_SQL = """
-PRAGMA user_version = 1;
+PRAGMA user_version = 2;
 
 CREATE TABLE IF NOT EXISTS meta (
     key   TEXT PRIMARY KEY,
     value TEXT
 );
 
+CREATE TABLE IF NOT EXISTS source_game (
+    game_id        INTEGER PRIMARY KEY,
+    source_ordinal INTEGER NOT NULL UNIQUE,
+    canonical_pgn  TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS puzzle (
-    ordinal         INTEGER PRIMARY KEY,         -- 1-based display order; the stable row identity
+    ordinal         INTEGER PRIMARY KEY,         -- 1-based display order; renumbered after deletion
     puzzle_id       TEXT NOT NULL,               -- content fingerprint; cross-store key, NOT unique
     title           TEXT NOT NULL,
     initial_fen     TEXT NOT NULL,
     moves           TEXT NOT NULL,
     comments        TEXT NOT NULL,
     headers         TEXT NOT NULL,
-    pgn_text        TEXT NOT NULL,
+    source_game_id  INTEGER REFERENCES source_game(game_id) ON DELETE RESTRICT,
     player_color    TEXT,
     skip_first_move INTEGER NOT NULL DEFAULT 0,
     theme           TEXT NOT NULL DEFAULT '',
@@ -25,6 +31,16 @@ CREATE TABLE IF NOT EXISTS puzzle (
 );
 CREATE INDEX IF NOT EXISTS idx_puzzle_id ON puzzle(puzzle_id);
 CREATE INDEX IF NOT EXISTS idx_puzzle_theme ON puzzle(theme);
+CREATE INDEX IF NOT EXISTS idx_puzzle_source_game ON puzzle(source_game_id);
+
+CREATE TRIGGER IF NOT EXISTS delete_orphan_source_game
+AFTER DELETE ON puzzle
+WHEN OLD.source_game_id IS NOT NULL
+BEGIN
+    DELETE FROM source_game
+    WHERE game_id = OLD.source_game_id
+      AND NOT EXISTS (SELECT 1 FROM puzzle WHERE source_game_id = OLD.source_game_id);
+END;
 """
 
 

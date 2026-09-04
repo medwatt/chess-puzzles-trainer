@@ -50,7 +50,7 @@ def _window(pgn: str, comments: tuple[str, ...] = (), **options) -> MainWindow:
         initial_fen=chess.STARTING_FEN,
         moves=(chess.Move.from_uci("e2e4"),),
         comments=comments,
-        pgn_text=pgn,
+        canonical_pgn=pgn,
     )
     window = MainWindow.__new__(MainWindow)
     window.session = PuzzleSession(puzzle, chess.WHITE)
@@ -155,7 +155,7 @@ def test_a_line_ending_on_the_opponents_move_stops_the_same_way() -> None:
         initial_fen=chess.STARTING_FEN,
         moves=(chess.Move.from_uci("e2e4"), chess.Move.from_uci("e7e5")),
         comments=("", "", "Final word."),
-        pgn_text=OPPONENT_LAST_PGN,
+        canonical_pgn=OPPONENT_LAST_PGN,
     )
     window = MainWindow.__new__(MainWindow)
     window.session = PuzzleSession(puzzle, chess.WHITE)

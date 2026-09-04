@@ -51,7 +51,7 @@ def _tree_puzzle() -> Puzzle:
         title="Tree",
         initial_fen=chess.STARTING_FEN,
         moves=(chess.Move.from_uci("e2e4"), chess.Move.from_uci("e7e5")),
-        pgn_text=TREE_PGN,
+        canonical_pgn=TREE_PGN,
     )
 
 
@@ -84,7 +84,7 @@ def test_unmarked_sibling_line_is_an_alternative_not_a_mistake() -> None:
     assert session.mistakes == 1
 
 
-def test_puzzle_without_pgn_text_keeps_original_behavior() -> None:
+def test_puzzle_without_canonical_pgn_keeps_original_behavior() -> None:
     puzzle = Puzzle(
         title="No tree",
         initial_fen=chess.STARTING_FEN,
@@ -121,7 +121,7 @@ def test_leaf_alternative_is_an_accepted_final_answer() -> None:
         title="Mined",
         initial_fen=chess.STARTING_FEN,
         moves=(chess.Move.from_uci("e2e4"),),
-        pgn_text=MINED_PGN,
+        canonical_pgn=MINED_PGN,
     )
     session = PuzzleSession(puzzle, chess.WHITE)
 

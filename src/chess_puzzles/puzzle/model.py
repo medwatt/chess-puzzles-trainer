@@ -29,7 +29,8 @@ class Puzzle:
     moves: tuple[chess.Move, ...]
     comments: tuple[str, ...] = field(default_factory=tuple)
     headers: dict[str, str] = field(default_factory=dict)
-    pgn_text: str = ""
+    canonical_pgn: str = ""
+    source_game_ordinal: int | None = None
     puzzle_id: str = ""
     ordinal: int = 0
     player_color: chess.Color | None = None

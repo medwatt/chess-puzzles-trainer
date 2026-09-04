@@ -31,7 +31,7 @@ def test_pgn_loader_preserves_headers_comments_and_text() -> None:
         chess.Move.from_uci("g1f3"),
     )
     assert puzzle.comments[1] == "first"
-    assert "Training" in puzzle.pgn_text
+    assert "Training" in puzzle.canonical_pgn
 
 
 def test_pgn_loader_recovers_moves_after_blank_line_in_movetext() -> None:
@@ -209,7 +209,7 @@ def test_pgn_for_puzzle_rebuild_keeps_comments_on_their_moves() -> None:
 """
     puzzle = PgnLoader().load(StringIO(pgn))[0]
     # Force the rebuild path by dropping the stored PGN text.
-    rebuilt = pgn_for_puzzle(replace(puzzle, pgn_text=""))
+    rebuilt = pgn_for_puzzle(replace(puzzle, canonical_pgn=""))
 
     reparsed = PgnLoader().load(StringIO(rebuilt))[0]
     assert reparsed.comments == puzzle.comments
@@ -232,8 +232,9 @@ def test_split_lines_yields_one_puzzle_per_variation_line() -> None:
     assert [m.uci() for m in first.moves] == ["e2e4", "e7e5", "g1f3"]
     assert [m.uci() for m in second.moves] == ["d2d4", "d7d5", "c2c4"]
     # Both lines keep the full game PGN so sessions can classify deviations.
-    assert first.pgn_text == second.pgn_text
-    assert "queenside" in first.pgn_text
+    assert first.canonical_pgn == second.canonical_pgn
+    assert first.source_game_ordinal == second.source_game_ordinal == 1
+    assert "queenside" in first.canonical_pgn
 
 
 def test_split_lines_prunes_mistake_marked_variations() -> None:

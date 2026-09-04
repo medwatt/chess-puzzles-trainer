@@ -14,7 +14,7 @@ Qh4# {mate} ) 1... e5 *
 
 
 def test_tree_classifies_mainline_alternative_and_mistake() -> None:
-    tree = MoveTree.from_pgn_text(ANNOTATED_PGN, chess.STARTING_FEN)
+    tree = MoveTree.from_canonical_pgn(ANNOTATED_PGN, chess.STARTING_FEN)
     assert tree is not None
     assert tree.has_branches
 
@@ -29,7 +29,7 @@ def test_tree_classifies_mainline_alternative_and_mistake() -> None:
 
 
 def test_refutation_carries_line_and_comments() -> None:
-    tree = MoveTree.from_pgn_text(ANNOTATED_PGN, chess.STARTING_FEN)
+    tree = MoveTree.from_canonical_pgn(ANNOTATED_PGN, chess.STARTING_FEN)
     assert tree is not None
     bad = tree.root.child(chess.Move.from_uci("f2f3"))
     assert bad is not None
@@ -42,16 +42,16 @@ def test_refutation_carries_line_and_comments() -> None:
 
 
 def test_tree_absent_for_empty_or_mismatched_pgn() -> None:
-    assert MoveTree.from_pgn_text("", chess.STARTING_FEN) is None
-    assert MoveTree.from_pgn_text("   \n", chess.STARTING_FEN) is None
+    assert MoveTree.from_canonical_pgn("", chess.STARTING_FEN) is None
+    assert MoveTree.from_canonical_pgn("   \n", chess.STARTING_FEN) is None
     # PGN that starts from a different position does not describe the puzzle.
     other_fen = "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1"
-    assert MoveTree.from_pgn_text(ANNOTATED_PGN, other_fen) is None
+    assert MoveTree.from_canonical_pgn(ANNOTATED_PGN, other_fen) is None
 
 
 def test_null_move_children_are_dropped() -> None:
     pgn = '[Event "Text page"]\n[Result "*"]\n\n{lesson} 1. -- {more text} *\n'
-    tree = MoveTree.from_pgn_text(pgn, chess.STARTING_FEN)
+    tree = MoveTree.from_canonical_pgn(pgn, chess.STARTING_FEN)
     assert tree is not None
     assert tree.root.children == ()
     assert not tree.has_branches
@@ -59,6 +59,15 @@ def test_null_move_children_are_dropped() -> None:
 
 def test_linear_game_has_no_branches() -> None:
     pgn = '[Event "Line"]\n[Result "*"]\n\n1. e4 e5 2. Nf3 *\n'
-    tree = MoveTree.from_pgn_text(pgn, chess.STARTING_FEN)
+    tree = MoveTree.from_canonical_pgn(pgn, chess.STARTING_FEN)
     assert tree is not None
     assert not tree.has_branches
+
+
+def test_parsed_canonical_tree_is_shared() -> None:
+    first = MoveTree.from_canonical_pgn(ANNOTATED_PGN, chess.STARTING_FEN)
+    second = MoveTree.from_canonical_pgn(ANNOTATED_PGN, chess.STARTING_FEN)
+
+    assert first is not None and second is not None
+    assert first is not second
+    assert first.root is second.root

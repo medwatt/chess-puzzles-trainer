@@ -38,6 +38,11 @@ DECK_KIND_ARENA = "arena"
 _COLOR_TO_TEXT = {chess.WHITE: "white", chess.BLACK: "black"}
 _TEXT_TO_COLOR = {"white": chess.WHITE, "black": chess.BLACK}
 
+_PUZZLE_SELECT = (
+    "SELECT p.*, g.canonical_pgn, g.source_ordinal AS source_game_ordinal"
+    " FROM puzzle AS p LEFT JOIN source_game AS g ON g.game_id = p.source_game_id"
+)
+
 
 @dataclass(frozen=True, slots=True)
 class ContentMeta:
@@ -88,22 +93,14 @@ class ContentDatabase:
                 "INSERT INTO meta (key, value) VALUES (?, ?)",
                 [(key, getattr(meta, key)) for key in _META_KEYS],
             )
-            conn.executemany(
-                "INSERT INTO puzzle (puzzle_id, ordinal, title, initial_fen, moves, comments, headers,"
-                " pgn_text, player_color, skip_first_move, theme, created_at)"
-                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                (
-                    _puzzle_to_row(puzzle, ordinal)
-                    for ordinal, puzzle in enumerate(puzzles, start=1)
-                ),
-            )
+            _insert_puzzles(conn, puzzles, start_ordinal=1)
         return cls(conn)
 
     @classmethod
     def open(cls, path: str | Path) -> "ContentDatabase":
         conn = _connect(path)
         version = conn.execute("PRAGMA user_version").fetchone()[0]
-        if version != 1:
+        if version != 2:
             conn.close()
             raise ValueError("unsupported/old content database")
         return cls(conn)
@@ -148,14 +145,17 @@ class ContentDatabase:
         return self._conn.execute("SELECT COUNT(*) FROM puzzle").fetchone()[0]
 
     def puzzle_at(self, index: int) -> Puzzle:
-        row = self._conn.execute("SELECT * FROM puzzle WHERE ordinal = ?", (index + 1,)).fetchone()
+        row = self._conn.execute(
+            f"{_PUZZLE_SELECT} WHERE p.ordinal = ?", (index + 1,)
+        ).fetchone()
         if row is None:
             raise IndexError(index)
         return _row_to_puzzle(row)
 
     def puzzle_by_id(self, puzzle_id: str) -> Puzzle | None:
         row = self._conn.execute(
-            "SELECT * FROM puzzle WHERE puzzle_id = ? ORDER BY ordinal LIMIT 1", (puzzle_id,)
+            f"{_PUZZLE_SELECT} WHERE p.puzzle_id = ? ORDER BY p.ordinal LIMIT 1",
+            (puzzle_id,),
         ).fetchone()
         return _row_to_puzzle(row) if row is not None else None
 
@@ -168,7 +168,7 @@ class ContentDatabase:
         return row["ordinal"] - 1 if row is not None else None
 
     def iter_puzzles(self) -> Iterator[Puzzle]:
-        for row in self._conn.execute("SELECT * FROM puzzle ORDER BY ordinal"):
+        for row in self._conn.execute(f"{_PUZZLE_SELECT} ORDER BY p.ordinal"):
             yield _row_to_puzzle(row)
 
     def puzzle_ids(self) -> set[str]:
@@ -178,21 +178,11 @@ class ContentDatabase:
     def append_puzzles(self, puzzles: Iterable[Puzzle]) -> int:
         """Add puzzles after the current last ordinal (arena refills)."""
         start = self._conn.execute("SELECT COALESCE(MAX(ordinal), 0) FROM puzzle").fetchone()[0]
-        rows = [
-            _puzzle_to_row(puzzle, ordinal)
-            for ordinal, puzzle in enumerate(puzzles, start=start + 1)
-        ]
-        if not rows:
-            return 0
         with self._conn:
-            self._conn.executemany(
-                "INSERT INTO puzzle (puzzle_id, ordinal, title, initial_fen, moves, comments, headers,"
-                " pgn_text, player_color, skip_first_move, theme, created_at)"
-                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                rows,
-            )
-            self._touch()
-        return len(rows)
+            inserted = _insert_puzzles(self._conn, puzzles, start_ordinal=start + 1)
+            if inserted:
+                self._touch()
+        return inserted
 
     def themes(self) -> list[str]:
         rows = self._conn.execute(
@@ -257,6 +247,7 @@ class ContentDatabase:
 def _connect(path: str | Path) -> sqlite3.Connection:
     conn = sqlite3.connect(str(path))
     conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA foreign_keys = ON")
     return conn
 
 
@@ -267,7 +258,8 @@ def _row_to_puzzle(row: sqlite3.Row) -> Puzzle:
         moves=tuple(chess.Move.from_uci(uci) for uci in json.loads(row["moves"])),
         comments=tuple(json.loads(row["comments"])),
         headers=json.loads(row["headers"]),
-        pgn_text=row["pgn_text"],
+        canonical_pgn=row["canonical_pgn"] or "",
+        source_game_ordinal=row["source_game_ordinal"],
         puzzle_id=row["puzzle_id"],
         ordinal=row["ordinal"],
         player_color=_TEXT_TO_COLOR.get(row["player_color"]),
@@ -276,7 +268,7 @@ def _row_to_puzzle(row: sqlite3.Row) -> Puzzle:
     )
 
 
-def _puzzle_to_row(puzzle: Puzzle, ordinal: int) -> tuple:
+def _puzzle_to_row(puzzle: Puzzle, ordinal: int, source_game_id: int | None) -> tuple:
     moves = [move.uci() for move in puzzle.moves]
     return (
         puzzle.puzzle_id
@@ -287,9 +279,53 @@ def _puzzle_to_row(puzzle: Puzzle, ordinal: int) -> tuple:
         json.dumps(moves),
         json.dumps(list(puzzle.comments)),
         json.dumps(puzzle.headers),
-        puzzle.pgn_text,
+        source_game_id,
         _COLOR_TO_TEXT.get(puzzle.player_color),
         1 if puzzle.skip_first_move else 0,
         puzzle.theme,
         now_iso(),
     )
+
+
+def _insert_puzzles(
+    conn: sqlite3.Connection, puzzles: Iterable[Puzzle], *, start_ordinal: int
+) -> int:
+    """Insert a batch, storing each source game once for all of its lines."""
+    next_game_id = conn.execute(
+        "SELECT COALESCE(MAX(game_id), 0) + 1 FROM source_game"
+    ).fetchone()[0]
+    next_source_ordinal = conn.execute(
+        "SELECT COALESCE(MAX(source_ordinal), 0) + 1 FROM source_game"
+    ).fetchone()[0]
+    game_ids: dict[tuple[int | None, str], int] = {}
+    game_rows: list[tuple[int, int, str]] = []
+    puzzle_rows: list[tuple] = []
+
+    for ordinal, puzzle in enumerate(puzzles, start=start_ordinal):
+        source_game_id = None
+        if puzzle.canonical_pgn:
+            key = (puzzle.source_game_ordinal, puzzle.canonical_pgn)
+            source_game_id = game_ids.get(key)
+            if source_game_id is None:
+                source_game_id = next_game_id
+                next_game_id += 1
+                game_ids[key] = source_game_id
+                game_rows.append(
+                    (source_game_id, next_source_ordinal, puzzle.canonical_pgn)
+                )
+                next_source_ordinal += 1
+        puzzle_rows.append(_puzzle_to_row(puzzle, ordinal, source_game_id))
+
+    if not puzzle_rows:
+        return 0
+    conn.executemany(
+        "INSERT INTO source_game (game_id, source_ordinal, canonical_pgn) VALUES (?, ?, ?)",
+        game_rows,
+    )
+    conn.executemany(
+        "INSERT INTO puzzle (puzzle_id, ordinal, title, initial_fen, moves, comments, headers,"
+        " source_game_id, player_color, skip_first_move, theme, created_at)"
+        " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        puzzle_rows,
+    )
+    return len(puzzle_rows)

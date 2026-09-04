@@ -23,7 +23,7 @@ F4, EXF4 = chess.Move.from_uci("f2f4"), chess.Move.from_uci("e5f4")
 
 
 def _line(moves: tuple[chess.Move, ...], pgn: str = GAME_PGN) -> Puzzle:
-    return Puzzle(title="line", initial_fen=chess.STARTING_FEN, moves=moves, pgn_text=pgn)
+    return Puzzle(title="line", initial_fen=chess.STARTING_FEN, moves=moves, canonical_pgn=pgn)
 
 
 LINE_ONE = _line((E4, E5, NF3, NC6, BB5))
@@ -50,7 +50,7 @@ def test_different_start_positions_have_no_prefix() -> None:
         title="page",
         initial_fen="rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1",
         moves=(E5,),
-        pgn_text=GAME_PGN,
+        canonical_pgn=GAME_PGN,
     )
     assert drill_prefix_length(study, LINE_ONE) == 0
 

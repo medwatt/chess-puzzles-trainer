@@ -113,6 +113,82 @@ def test_delete_renumbers_ordinals(tmp_path: Path) -> None:
     assert [db.puzzle_at(i).ordinal for i in range(2)] == [1, 2]
 
 
+def test_repertoire_lines_share_one_stored_source_game(tmp_path: Path) -> None:
+    path = tmp_path / "repertoire.cpdb"
+    canonical_pgn = '[Event "Tree"]\n\n1. e4 (1. d4 d5) e5 *'
+    lines = [
+        Puzzle(
+            title="Line 1",
+            initial_fen=chess.STARTING_FEN,
+            moves=(chess.Move.from_uci("e2e4"), chess.Move.from_uci("e7e5")),
+            canonical_pgn=canonical_pgn,
+            source_game_ordinal=1,
+        ),
+        Puzzle(
+            title="Line 2",
+            initial_fen=chess.STARTING_FEN,
+            moves=(chess.Move.from_uci("d2d4"), chess.Move.from_uci("d7d5")),
+            canonical_pgn=canonical_pgn,
+            source_game_ordinal=1,
+        ),
+    ]
+
+    db = ContentDatabase.create(path, _meta(), lines)
+    assert db.puzzle_at(0).canonical_pgn == canonical_pgn
+    assert db.puzzle_at(1).canonical_pgn == canonical_pgn
+    assert db.puzzle_at(0).source_game_ordinal == 1
+    db.close()
+
+    connection = sqlite3.connect(path)
+    assert connection.execute("SELECT COUNT(*) FROM source_game").fetchone()[0] == 1
+    assert "pgn_text" not in {
+        row[1] for row in connection.execute("PRAGMA table_info(puzzle)")
+    }
+    connection.close()
+
+
+def test_deleting_last_line_removes_its_source_game(tmp_path: Path) -> None:
+    path = tmp_path / "repertoire.cpdb"
+    canonical_pgn = '[Event "Tree"]\n\n1. e4 e5 *'
+    lines = [
+        Puzzle(
+            title=f"Line {index}",
+            initial_fen=chess.STARTING_FEN,
+            moves=(chess.Move.from_uci("e2e4"), chess.Move.from_uci("e7e5")),
+            canonical_pgn=canonical_pgn,
+            source_game_ordinal=1,
+        )
+        for index in (1, 2)
+    ]
+    db = ContentDatabase.create(path, _meta(), lines)
+
+    db.delete_puzzles([1])
+    with sqlite3.connect(path) as connection:
+        assert connection.execute("SELECT COUNT(*) FROM source_game").fetchone()[0] == 1
+    db.delete_puzzles([1])
+    with sqlite3.connect(path) as connection:
+        assert connection.execute("SELECT COUNT(*) FROM source_game").fetchone()[0] == 0
+
+
+def test_identical_but_separate_source_games_remain_separate(tmp_path: Path) -> None:
+    canonical_pgn = '[Event "Repeated"]\n\n1. e4 e5 *'
+    games = [
+        Puzzle(
+            title=f"Occurrence {source_ordinal}",
+            initial_fen=chess.STARTING_FEN,
+            moves=(chess.Move.from_uci("e2e4"), chess.Move.from_uci("e7e5")),
+            canonical_pgn=canonical_pgn,
+            source_game_ordinal=source_ordinal,
+        )
+        for source_ordinal in (1, 2)
+    ]
+    path = tmp_path / "repeated.cpdb"
+    ContentDatabase.create(path, _meta(), games).close()
+
+    with sqlite3.connect(path) as connection:
+        assert connection.execute("SELECT COUNT(*) FROM source_game").fetchone()[0] == 2
+
+
 def test_study_pages_with_distinct_comments_get_distinct_ids(tmp_path: Path) -> None:
     # Move-free study pages share a position but carry different lesson text, so
     # each gets its own puzzle_id and is individually addressable cross-store.
@@ -179,7 +255,7 @@ def test_in_memory_database(tmp_path: Path) -> None:
 def test_open_rejects_wrong_version(tmp_path: Path) -> None:
     path = tmp_path / "old.cpdb"
     conn = sqlite3.connect(str(path))
-    conn.execute("PRAGMA user_version = 2")
+    conn.execute("PRAGMA user_version = 1")
     conn.close()
     with pytest.raises(ValueError):
         ContentDatabase.open(path)

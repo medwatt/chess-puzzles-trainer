@@ -111,7 +111,7 @@ def _blundered_session() -> PuzzleSession:
         initial_fen=chess.STARTING_FEN,
         moves=(chess.Move.from_uci("e2e4"), chess.Move.from_uci("e7e5")),
         comments=("find the best move", "", ""),
-        pgn_text=TREE_PGN,
+        canonical_pgn=TREE_PGN,
     )
     session = PuzzleSession(puzzle, chess.WHITE)
     assert session.play_user_move(chess.Move.from_uci("f2f3")) is MoveResult.MISTAKE

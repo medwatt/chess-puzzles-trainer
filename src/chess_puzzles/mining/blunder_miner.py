@@ -62,7 +62,7 @@ class MiningCriteria:
 @dataclass(frozen=True, slots=True)
 class MinedPuzzle:
     puzzle_id: str
-    pgn_text: str
+    canonical_pgn: str
     rating: int
     themes: tuple[str, ...]
 
@@ -191,7 +191,7 @@ class BlunderMiner:
         alternatives = [move for move, _ in safe[1 : 1 + criteria.max_alternatives]]
         return MinedPuzzle(
             puzzle_id=row.puzzle_id,
-            pgn_text=_build_pgn(row, safe_move=safe[0][0], alternatives=alternatives),
+            canonical_pgn=_build_pgn(row, safe_move=safe[0][0], alternatives=alternatives),
             rating=row.rating,
             themes=row.themes,
         )
@@ -226,7 +226,7 @@ def mined_to_puzzles(mined: Sequence[MinedPuzzle]) -> list[Puzzle]:
 
 
 def combined_pgn(mined: Sequence[MinedPuzzle]) -> str:
-    return "\n\n".join(puzzle.pgn_text for puzzle in mined) + "\n"
+    return "\n\n".join(puzzle.canonical_pgn for puzzle in mined) + "\n"
 
 
 def _build_pgn(row: _Row, safe_move: chess.Move, alternatives: list[chess.Move]) -> str:

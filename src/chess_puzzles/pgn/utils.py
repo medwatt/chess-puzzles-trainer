@@ -28,8 +28,8 @@ def ordered_header_keys(headers: dict[str, str]) -> list[str]:
 
 
 def pgn_for_puzzle(puzzle: Puzzle) -> str:
-    if puzzle.pgn_text.strip():
-        return puzzle.pgn_text
+    if puzzle.canonical_pgn.strip():
+        return puzzle.canonical_pgn
 
     game = chess.pgn.Game()
     for key in ordered_header_keys(puzzle.headers):

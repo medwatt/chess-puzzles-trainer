@@ -1,9 +1,9 @@
-"""Variation tree parsed from a puzzle's stored PGN.
+"""Variation tree parsed from a puzzle's canonical source PGN.
 
-The content store keeps each puzzle's full PGN (``pgn_text``) verbatim, so
-every variation an author wrote -- alternative lines, annotated mistakes and
-the lines that punish them -- is already persisted even though ``Puzzle.moves`` holds
-only the drilled line. This module turns that text back into a tree the
+The content store keeps each source game's parser-normalized PGN once, so every
+variation an author wrote -- alternative lines, annotated mistakes and the lines
+that punish them -- is persisted even though ``Puzzle.moves`` holds only the
+drilled line. This module turns that text back into a tree the
 solving session can consult when the user deviates from the expected move.
 
 Semantics follow standard PGN annotation glyphs: a variation whose first move
@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import io
 from dataclasses import dataclass
+from functools import lru_cache
 
 import chess
 import chess.pgn
@@ -78,24 +79,12 @@ class MoveTree:
         return _has_branches(self.root)
 
     @classmethod
-    def from_pgn_text(cls, pgn_text: str, initial_fen: str) -> "MoveTree | None":
+    def from_canonical_pgn(cls, canonical_pgn: str, initial_fen: str) -> "MoveTree | None":
         """Build a tree, or None when the PGN is absent, unparseable, or
         starts from a different position than the puzzle (in which case its
         variations do not describe the puzzle's board)."""
-        if not pgn_text.strip():
-            return None
-        try:
-            game = chess.pgn.read_game(io.StringIO(pgn_text))
-        except Exception:
-            return None
-        if game is None:
-            return None
-        try:
-            if game.board().fen() != chess.Board(initial_fen).fen():
-                return None
-        except ValueError:
-            return None
-        return cls(_build_node(game))
+        root = _cached_root(canonical_pgn, initial_fen)
+        return cls(root) if root is not None else None
 
     @staticmethod
     def mistake_line_of(node: TreeNode) -> MistakeLine:
@@ -127,6 +116,24 @@ def _build_node(game_node: chess.pgn.GameNode) -> TreeNode:
         comment=game_node.comment.strip(),
         children=children,
     )
+
+
+@lru_cache(maxsize=32)
+def _cached_root(canonical_pgn: str, initial_fen: str) -> TreeNode | None:
+    if not canonical_pgn.strip():
+        return None
+    try:
+        game = chess.pgn.read_game(io.StringIO(canonical_pgn))
+    except Exception:
+        return None
+    if game is None:
+        return None
+    try:
+        if game.board().fen() != chess.Board(initial_fen).fen():
+            return None
+    except ValueError:
+        return None
+    return _build_node(game)
 
 
 def _has_branches(node: TreeNode) -> bool:
