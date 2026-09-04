@@ -20,7 +20,7 @@ jobs:
 
       - run: pip install .[dev]
 
-      - run: ruff check src tests
+      - run: ruff check src tests scripts
 
       - run: git diff --check
 

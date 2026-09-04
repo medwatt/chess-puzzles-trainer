@@ -12,6 +12,7 @@ advancedPawn
 attackingF2F7
 capturingDefender
 discoveredAttack
+discoveredCheck
 doubleCheck
 exposedKing
 fork
@@ -24,6 +25,7 @@ skewer
 trappedPiece
 attraction
 clearance
+collinearMove
 defensiveMove
 deflection
 interference
@@ -46,6 +48,7 @@ bodenMate
 cornerMate
 doubleBishopMate
 dovetailMate
+epauletteMate
 hookMate
 killBoxMate
 pillsburysMate
@@ -54,6 +57,7 @@ operaMate
 triangleMate
 vukovicMate
 smotheredMate
+swallowstailMate
 castling
 enPassant
 promotion

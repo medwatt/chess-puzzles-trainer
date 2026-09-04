@@ -33,7 +33,7 @@ pythonpath = ["src"]
 # Production code only. Tests use deliberate dynamic fakes (partial MainWindow
 # objects built with __new__) that are exercised by pytest, not by a type
 # checker; Ruff still checks them. untracked/ holds one-off experiments.
-include = ["src"]
+include = ["src", "scripts"]
 exclude = ["**/__pycache__", "untracked"]
 # The floor declared in [project], not whatever interpreter happens to be local.
 pythonVersion = "3.11"

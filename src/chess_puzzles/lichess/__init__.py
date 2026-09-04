@@ -13,12 +13,13 @@ from chess_puzzles.lichess.settings import (
     load_lichess_settings,
     save_lichess_settings,
 )
-from chess_puzzles.lichess.themes import LICHESS_THEMES
+from chess_puzzles.lichess.vocabulary import LICHESS_OPENINGS, LICHESS_THEMES
 
 __all__ = [
     "DEFAULT_LICHESS_DATABASE_FILENAME",
     "DEFAULT_LICHESS_DATABASE_NAME",
     "DEFAULT_LICHESS_SETTINGS_PATH",
+    "LICHESS_OPENINGS",
     "LICHESS_THEMES",
     "LichessCsvImporter",
     "LichessImportCriteria",

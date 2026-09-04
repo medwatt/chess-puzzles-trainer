@@ -43,6 +43,7 @@ from chess_puzzles.lichess import (
     LichessImportDialog,
     save_lichess_settings,
 )
+from chess_puzzles.lichess.run_dialog import LichessImportRunDialog
 from chess_puzzles.review import DueReview, due_reviews
 from chess_puzzles.store import (
     DECK_KIND_ARENA,
@@ -443,19 +444,18 @@ class MainDatabaseActions:
             pass
         criteria = options.to_criteria()
         importer = LichessCsvImporter()
-        window.root.configure(cursor="watch")
-        window.root.update_idletasks()
-        try:
-            puzzles = importer.sample_puzzles(options.csv_path, criteria)
-        except Exception as exc:
-            messagebox.showerror("Could not import Lichess CSV", str(exc), parent=window.root)
-            return
-        finally:
-            window.root.configure(cursor="")
+        # Scanned on a worker thread: a narrow filter can read the whole 1GB
+        # file, and the dialog is what makes that cancellable.
+        puzzles = LichessImportRunDialog(
+            window.root, csv_path=options.csv_path, criteria=criteria
+        ).show_modal()
         if not puzzles:
-            messagebox.showinfo(
-                "No puzzles found", "No puzzles matched the selected filters.", parent=window.root
-            )
+            if puzzles is not None:
+                messagebox.showinfo(
+                    "No puzzles found",
+                    "No puzzles matched the selected filters.",
+                    parent=window.root,
+                )
             return
         save_path = self._ask_save_path(DEFAULT_LICHESS_DATABASE_FILENAME)
         if not save_path:

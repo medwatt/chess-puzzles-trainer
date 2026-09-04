@@ -6,7 +6,7 @@ from tkinter import messagebox, ttk
 
 from chess_puzzles.arena.service import ArenaConfig, DEFAULT_BATCH_SIZE
 from chess_puzzles.lichess.settings import load_lichess_settings
-from chess_puzzles.lichess.themes import LICHESS_THEMES
+from chess_puzzles.lichess.vocabulary import LICHESS_THEMES
 from chess_puzzles.settings.theme_repository import UiTheme
 from chess_puzzles.ui.theme_selector import ThemeSelector
 from chess_puzzles.ui.modal import ModalParent, run_modal

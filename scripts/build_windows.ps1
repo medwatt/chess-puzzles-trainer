@@ -19,4 +19,5 @@ python -m PyInstaller `
   --paths src `
   --add-data "$rootDir\assets;assets" `
   --add-data "$rootDir\src\chess_puzzles\lichess\themes.txt;chess_puzzles\lichess" `
+  --add-data "$rootDir\src\chess_puzzles\lichess\openings.txt;chess_puzzles\lichess" `
   src/chess_puzzles/__main__.py
