@@ -19,6 +19,7 @@ _META_KEYS = (
     "database_id",
     "name",
     "description",
+    "kind",
     "source_kind",
     "source_path",
     "created_at",
@@ -53,6 +54,10 @@ class ContentMeta:
     source_path: str = ""
     created_at: str = ""
     updated_at: str = ""
+    # How the deck trains, as opposed to source_kind (where it came from).
+    # Set at creation so a deck is never briefly misclassified between
+    # ContentDatabase.create and a follow-up write.
+    kind: str = DECK_KIND_TACTICS
 
 
 class ContentDatabase:
@@ -112,6 +117,9 @@ class ContentDatabase:
     def meta(self) -> ContentMeta:
         rows = self._conn.execute("SELECT key, value FROM meta").fetchall()
         values = {row["key"]: row["value"] for row in rows}
+        # Decks written before kind was stored at creation carry no row for it.
+        # Tactics is the genuine default, not a legacy fallback.
+        values["kind"] = values.get("kind") or DECK_KIND_TACTICS
         return ContentMeta(**{key: values.get(key, "") or "" for key in _META_KEYS})
 
     @property
@@ -280,7 +288,7 @@ def _puzzle_to_row(puzzle: Puzzle, ordinal: int, source_game_id: int | None) -> 
         json.dumps(list(puzzle.comments)),
         json.dumps(puzzle.headers),
         source_game_id,
-        _COLOR_TO_TEXT.get(puzzle.player_color),
+        _COLOR_TO_TEXT[puzzle.player_color] if puzzle.player_color is not None else None,
         1 if puzzle.skip_first_move else 0,
         puzzle.theme,
         now_iso(),

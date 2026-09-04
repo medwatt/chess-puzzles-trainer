@@ -2,13 +2,14 @@ from __future__ import annotations
 
 import sqlite3
 import tkinter as tk
+from typing import Literal
 from datetime import datetime
 from pathlib import Path
 from tkinter import messagebox, ttk
 
 from chess_puzzles.arena.service import ArenaSummary, list_sessions
 from chess_puzzles.ui.table import autosize_columns
-from chess_puzzles.ui.modal import run_modal
+from chess_puzzles.ui.modal import ModalParent, run_modal
 
 
 class ArenaSessionsDialog(tk.Toplevel):
@@ -25,7 +26,7 @@ class ArenaSessionsDialog(tk.Toplevel):
 
     def __init__(
         self,
-        parent: tk.Misc,
+        parent: ModalParent,
         conn: sqlite3.Connection,
         *,
         open_path: Path | None = None,
@@ -47,13 +48,15 @@ class ArenaSessionsDialog(tk.Toplevel):
         self._table = ttk.Treeview(
             table_frame, columns=self.COLUMNS, show="headings", selectmode="browse", height=10
         )
-        headings = {
-            "session": ("Session", tk.W),
-            "started": ("Started", tk.W),
-            "rating": ("Rating", tk.E),
-            "puzzles": ("Puzzles", tk.E),
-            "attempted": ("Attempted", tk.E),
-            "themes": ("Themes", tk.W),
+        # Literals rather than tk.W / tk.E: tkinter declares those constants as
+        # plain str, which the heading/column signatures do not accept.
+        headings: dict[str, tuple[str, Literal["w", "e"]]] = {
+            "session": ("Session", "w"),
+            "started": ("Started", "w"),
+            "rating": ("Rating", "e"),
+            "puzzles": ("Puzzles", "e"),
+            "attempted": ("Attempted", "e"),
+            "themes": ("Themes", "w"),
         }
         for column, (heading, anchor) in headings.items():
             self._table.heading(column, text=heading, anchor=anchor)

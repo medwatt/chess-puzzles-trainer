@@ -16,7 +16,7 @@ from chess_puzzles.lichess.settings import (
 from chess_puzzles.lichess.themes import LICHESS_THEMES
 from chess_puzzles.settings.theme_repository import UiTheme
 from chess_puzzles.ui.theme_selector import ThemeSelector
-from chess_puzzles.ui.modal import run_modal
+from chess_puzzles.ui.modal import ModalParent, run_modal
 
 
 @dataclass(slots=True, frozen=True)
@@ -57,7 +57,7 @@ class LichessImportDialog(tk.Toplevel):
 
     def __init__(
         self,
-        parent: tk.Misc,
+        parent: ModalParent,
         theme: UiTheme,
         csv_path: str | Path,
         settings: LichessImportSettings | None = None,

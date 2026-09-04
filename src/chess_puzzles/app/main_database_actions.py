@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import sqlite3
 import uuid
+from collections.abc import Sequence
 from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -51,6 +52,7 @@ from chess_puzzles.store import (
     FavoriteRef,
     now_iso,
 )
+from chess_puzzles.store.library import CourseLibrary
 
 if TYPE_CHECKING:
     from chess_puzzles.app.main_window import MainWindow
@@ -60,6 +62,53 @@ DATABASE_FILETYPES = (
     ("Course files", "*.cpdb"),
     ("All files", "*.*"),
 )
+
+
+def _resolve_refs(
+    library: CourseLibrary,
+    refs: Sequence[FavoriteRef | DueReview],
+) -> tuple[list[tuple[int, Puzzle, FavoriteRef]], list[tuple[int, FavoriteRef | DueReview]]]:
+    """Open each referenced deck once and pull out the puzzles it still holds.
+
+    Returns ``(resolved, unlocated)``. ``resolved`` carries ``(position,
+    puzzle, ref)`` triples keyed by the ref's index in ``refs``, so a caller
+    that cares about order -- the review queue is most-overdue first -- can
+    restore it after the by-path grouping. ``unlocated`` carries the refs the
+    library could not place at all, leaving each caller to decide whether the
+    open deck may stand in for them.
+
+    Grouping by path is the point: a cross-deck sweep would otherwise reopen
+    the same SQLite file once per puzzle. Refs whose deck is missing,
+    unreadable, or no longer holds the puzzle are dropped."""
+    by_path: dict[Path, list[tuple[int, FavoriteRef | DueReview]]] = {}
+    unlocated: list[tuple[int, FavoriteRef | DueReview]] = []
+    for position, ref in enumerate(refs):
+        path = library.resolve_path(ref.database_id, ref.database_path)
+        if path is None:
+            unlocated.append((position, ref))
+        else:
+            by_path.setdefault(path, []).append((position, ref))
+
+    resolved: list[tuple[int, Puzzle, FavoriteRef]] = []
+    for path, entries in by_path.items():
+        if not path.exists():
+            continue
+        try:
+            database = ContentDatabase.open(path)
+        except (OSError, sqlite3.DatabaseError, ValueError):
+            continue
+        try:
+            for position, ref in entries:
+                if ref.database_id != database.database_id:
+                    continue
+                puzzle = database.puzzle_by_id(ref.puzzle_id)
+                if puzzle is not None:
+                    resolved.append(
+                        (position, puzzle, FavoriteRef(ref.puzzle_id, ref.database_id, str(path)))
+                    )
+        finally:
+            database.close()
+    return resolved, unlocated
 
 
 class MainDatabaseActions:
@@ -244,6 +293,7 @@ class MainDatabaseActions:
             database_id=str(uuid.uuid4()),
             name=pgn_path.stem,
             description=f"Opening course, trained as {side_name}.",
+            kind=DECK_KIND_REPERTOIRE,
             source_kind="pgn",
             source_path=str(pgn_path),
             created_at=now_iso(),
@@ -252,7 +302,6 @@ class MainDatabaseActions:
         database = self._create_database(save_path, meta, puzzles)
         if database is None:
             return
-        database.set_meta_value("kind", DECK_KIND_REPERTOIRE)
         self._use_database(database, Path(save_path))
         window._status_var.set(
             f"Imported course: {len(puzzles)} line(s) in {chapters} chapter(s), training as {side_name}."
@@ -323,13 +372,15 @@ class MainDatabaseActions:
         if csv_path is None:
             return
         engine = load_engine_config().default_engine
-        engine_ok = engine is not None and Path(engine.command).is_file()
+        if engine is not None and not Path(engine.command).is_file():
+            # A configured engine whose binary has gone is no engine at all.
+            engine = None
         options = BlunderMineDialog(
-            window.root, engine.name if engine_ok else None, csv_path
+            window.root, engine.name if engine is not None else None, csv_path
         ).show_modal()
         if options is None:
             return
-        if not engine_ok:
+        if engine is None:
             # The dialog disables Generate without an engine, but Return can
             # still submit it; refuse rather than crash mid-run.
             messagebox.showerror(
@@ -558,7 +609,10 @@ class MainDatabaseActions:
         if not favorites:
             window._status_var.set("No favorites yet.")
             return
-        label = "All favorites" if scope == "all" else f"Favorites — {window.database.meta.name}"
+        deck = window.database
+        label = (
+            "All favorites" if scope == "all" or deck is None else f"Favorites — {deck.meta.name}"
+        )
         self._use_favorites_view(favorites, label)
 
     def export_favorites(self, scope: str) -> None:
@@ -596,31 +650,9 @@ class MainDatabaseActions:
         ]
 
     def _all_favorites(self):
-        favorites = []
-        by_path: dict[Path, list[FavoriteRef]] = {}
-        library = self.window.user_store.library
-        for ref in self.window.user_store.favorite_refs():
-            path = library.resolve_path(ref.database_id, ref.database_path)
-            if path is not None:
-                by_path.setdefault(path, []).append(ref)
-        for path, refs in by_path.items():
-            if not path.exists():
-                continue
-            try:
-                db = ContentDatabase.open(path)
-            except (OSError, sqlite3.DatabaseError, ValueError):
-                continue
-            try:
-                refs_for_db = [ref for ref in refs if ref.database_id == db.database_id]
-                for ref in refs_for_db:
-                    puzzle = db.puzzle_by_id(ref.puzzle_id)
-                    if puzzle is not None:
-                        favorites.append(
-                            (puzzle, FavoriteRef(ref.puzzle_id, ref.database_id, str(path)))
-                        )
-            finally:
-                db.close()
-        return favorites
+        store = self.window.user_store
+        resolved, _unlocated = _resolve_refs(store.library, list(store.favorite_refs()))
+        return [(puzzle, ref) for _position, puzzle, ref in resolved]
 
     def review_mistakes(self, scope: str = "all") -> None:
         """Serve the puzzles due for review as an in-memory deck.
@@ -652,44 +684,17 @@ class MainDatabaseActions:
         Attempts recorded before the locator migration have no path; those
         puzzles are served only when the currently open deck contains them."""
         window = self.window
-        resolved = []
-        by_path: dict[Path, list[tuple[int, DueReview]]] = {}
-        library = window.user_store.library
-        for order, item in enumerate(due):
-            path = library.resolve_path(item.database_id, item.database_path)
-            if path is not None:
-                by_path.setdefault(path, []).append((order, item))
-            elif window.database is not None and not window.favorites_view:
+        resolved, unlocated = _resolve_refs(window.user_store.library, due)
+        if window.database is not None and not window.favorites_view:
+            for position, item in unlocated:
                 puzzle = window.database.puzzle_by_id(item.puzzle_id)
                 if puzzle is not None:
                     ref = FavoriteRef(
                         item.puzzle_id, window.database.database_id, str(window.database_path)
                     )
-                    resolved.append((order, puzzle, ref))
-        for path, items in by_path.items():
-            if not path.exists():
-                continue
-            try:
-                db = ContentDatabase.open(path)
-            except (OSError, sqlite3.DatabaseError, ValueError):
-                continue
-            try:
-                for order, item in items:
-                    if item.database_id != db.database_id:
-                        continue
-                    puzzle = db.puzzle_by_id(item.puzzle_id)
-                    if puzzle is not None:
-                        resolved.append(
-                            (
-                                order,
-                                puzzle,
-                                FavoriteRef(item.puzzle_id, item.database_id, str(path)),
-                            )
-                        )
-            finally:
-                db.close()
+                    resolved.append((position, puzzle, ref))
         resolved.sort(key=lambda entry: entry[0])
-        return [(puzzle, ref) for _order, puzzle, ref in resolved]
+        return [(puzzle, ref) for _position, puzzle, ref in resolved]
 
     def _use_favorites_view(self, favorites, label: str, *, review: bool = False) -> None:
         puzzles = [puzzle for puzzle, _source in favorites]
@@ -841,9 +846,9 @@ class MainDatabaseActions:
     def manage_userdata(self) -> None:
         """Open scoped training-data management without touching deck content."""
         window = self.window
-        has_deck = window.database is not None and not window.favorites_view
-        database_id = window.database.database_id if has_deck else None
-        deck_name = window.database.meta.name if has_deck else ""
+        deck = None if window.favorites_view else window.database
+        database_id = deck.database_id if deck is not None else None
+        deck_name = deck.meta.name if deck is not None else ""
         dialog = UserDataManagerDialog(
             window.root,
             window.user_store,
@@ -853,13 +858,13 @@ class MainDatabaseActions:
         )
         changed = dialog.show()
         if changed:
-            if has_deck:
+            if deck is not None:
                 # Deleting arena attempts moves the frontier (typically back
                 # to the first puzzle) -- resume there, not at the old index.
                 # Favorites/position-only deletions leave attempts untouched
                 # and must not move the user.
                 if window.arena_mode and dialog.attempts_deleted:
-                    window.current_index = self._resume_index(window.database)
+                    window.current_index = self._resume_index(deck)
                 window.load_current_puzzle()
             window._refresh_session_stats()
             window._status_var.set("User data updated.")
@@ -884,11 +889,14 @@ class MainDatabaseActions:
 
     def _remove_current_row(self, status: str) -> None:
         window = self.window
-        window.database.delete_puzzles([window.current_index + 1])
-        if window.database.count() == 0:
+        database = window.database
+        if database is None:
+            return
+        database.delete_puzzles([window.current_index + 1])
+        if database.count() == 0:
             window.current_index = -1
             self.show_empty_state(status)
         else:
-            window.current_index = min(window.current_index, window.database.count() - 1)
+            window.current_index = min(window.current_index, database.count() - 1)
             window.load_current_puzzle()
             window._status_var.set(status)

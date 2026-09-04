@@ -149,6 +149,10 @@ class MainWindow:
         # Cached arena session rating (recomputed on load and after attempts;
         # the fold itself lives in arena.rating and derives from the log).
         self._arena_rating: float | None = None
+        # (position, total) of this puzzle within its theme, read once per
+        # puzzle load because it costs three queries and cannot change while
+        # the puzzle is on screen.
+        self._theme_position: tuple[int, int] | None = None
 
         # Engine config and analysis controller
         self.engine_config: EngineConfig = load_engine_config()
@@ -755,6 +759,9 @@ class MainWindow:
             return
         puzzle = self.database.puzzle_at(self.current_index)
         player_color = self._player_color_for_puzzle(puzzle)
+        # Three SQL statements, and the answer cannot change while one puzzle
+        # is being solved -- so it is read here rather than on every move.
+        self._theme_position = self.database.theme_position(self.current_index)
         self.cancel_prefix_recap()
         self.session = PuzzleSession(
             puzzle, player_color, prefix_length=self._drill_prefix_for(puzzle)
@@ -935,8 +942,8 @@ class MainWindow:
         except ValueError:
             return move.uci()
 
-    def toggle_hanging_overlay(self) -> None:
-        self._toggle_overlay(ControlOverlayMode.HANGING, "Hanging pieces highlighted.")
+    def toggle_under_pressure_overlay(self) -> None:
+        self._toggle_overlay(ControlOverlayMode.UNDER_PRESSURE, "Pieces under pressure highlighted.")
 
     def toggle_contested_overlay(self) -> None:
         self._toggle_overlay(
@@ -1083,7 +1090,10 @@ class MainWindow:
             return 0
         if not self.option("start_lines_at_divergence") or self.current_index <= 0:
             return 0
-        return drill_prefix_length(self.database.puzzle_at(self.current_index - 1), puzzle)
+        database = self.database
+        if database is None:
+            return 0
+        return drill_prefix_length(database.puzzle_at(self.current_index - 1), puzzle)
 
     def _start_prefix_recap(self) -> None:
         """Fast-forward the moves shared with the previous line, animated.
@@ -1286,13 +1296,8 @@ class MainWindow:
         if not display.show_theme:
             info["Theme"].set(HIDDEN_TEXT)
         elif puzzle.theme:
-            theme_progress = (
-                self.database.theme_position(self.current_index)
-                if self.database is not None
-                else None
-            )
-            if theme_progress is not None:
-                theme_pos, theme_total = theme_progress
+            if self._theme_position is not None:
+                theme_pos, theme_total = self._theme_position
                 info["Theme"].set(f"{puzzle.theme} [{theme_pos}/{theme_total}]")
             else:
                 info["Theme"].set(puzzle.theme)

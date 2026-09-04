@@ -4,6 +4,7 @@ import tkinter as tk
 from tkinter import font as tkfont
 from tkinter import ttk
 
+from chess_puzzles.ui.modal import ModalParent
 from chess_puzzles.settings.theme_repository import UiTheme
 from chess_puzzles.shortcuts import MENU_ACCELERATORS, SHORTCUT_HELP_SECTIONS
 
@@ -11,7 +12,7 @@ from chess_puzzles.shortcuts import MENU_ACCELERATORS, SHORTCUT_HELP_SECTIONS
 class ShortcutsHelpDialog(tk.Toplevel):
     """Read-only cheat sheet of the main window's keyboard shortcuts."""
 
-    def __init__(self, parent: tk.Misc, theme: UiTheme) -> None:
+    def __init__(self, parent: ModalParent, theme: UiTheme) -> None:
         super().__init__(parent, name="shortcutshelp", class_="ChessPuzzlesShortcutsHelp")
         self.title("Keyboard Shortcuts")
         self.transient(parent)

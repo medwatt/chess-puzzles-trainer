@@ -5,6 +5,12 @@ from collections.abc import Iterable
 
 from chess_puzzles.reports.model import AttemptSummary, DeckSummary
 
+# Completing the line with hints/assisted moves is not solving it. Both report
+# queries use this one condition so the overall summary and the per-deck table
+# cannot drift apart; ``arena.rating.is_win`` is the same rule in Python, for
+# the one caller that folds attempts in order instead of aggregating them.
+CLEAN_SOLVE = "outcome = 'solved' AND mistakes = 0 AND aids = 0"
+
 
 def attempt_summary(
     conn: sqlite3.Connection,
@@ -24,12 +30,10 @@ def attempt_summary(
         clauses.append(f"puzzle_id IN ({','.join('?' for _ in ids)})")
         params.extend(ids)
     where = f" WHERE {' AND '.join(clauses)}" if clauses else ""
-    # Completing the line with hints/assisted moves is not solving it.
-    solved = "outcome = 'solved' AND mistakes = 0 AND aids = 0"
     row = conn.execute(
         "SELECT"
         " COUNT(*) AS attempted,"
-        f" COALESCE(SUM(CASE WHEN {solved} THEN 1 ELSE 0 END), 0) AS solved,"
+        f" COALESCE(SUM(CASE WHEN {CLEAN_SOLVE} THEN 1 ELSE 0 END), 0) AS solved,"
         " COALESCE(SUM(CASE WHEN outcome = 'gave_up' THEN 1 ELSE 0 END), 0) AS gave_up,"
         " COALESCE(SUM(duration_ms), 0) AS total_ms"
         f" FROM attempt{where}",
@@ -46,7 +50,7 @@ def attempt_summary(
 def deck_summaries(conn: sqlite3.Connection) -> list[DeckSummary]:
     rows = conn.execute(
         "SELECT a.database_id, COALESCE(c.name, '') AS name, MAX(a.database_path) AS database_path, COUNT(*) AS attempted,"
-        " SUM(CASE WHEN outcome = 'solved' AND mistakes = 0 THEN 1 ELSE 0 END) AS clean_solves,"
+        f" SUM(CASE WHEN {CLEAN_SOLVE} THEN 1 ELSE 0 END) AS clean_solves,"
         " SUM(mistakes) AS mistakes, SUM(aids) AS aids, COALESCE(SUM(duration_ms), 0) AS total_ms"
         " FROM attempt a LEFT JOIN library_course c ON c.database_id=a.database_id"
         " GROUP BY a.database_id ORDER BY MAX(a.at) DESC, a.database_id"

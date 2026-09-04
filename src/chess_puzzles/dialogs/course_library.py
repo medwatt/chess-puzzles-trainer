@@ -11,7 +11,7 @@ from chess_puzzles.constants import COURSE_LIBRARY_DIALOG_GEOMETRY
 from chess_puzzles.dialogs.choice import ChoiceDialog
 from chess_puzzles.review import due_reviews
 from chess_puzzles.store import CourseLibrary, LibraryCourse
-from chess_puzzles.ui.modal import run_modal
+from chess_puzzles.ui.modal import ModalParent, run_modal
 from chess_puzzles.ui.table import autosize_columns
 from chess_puzzles.ui.window import fit_window
 
@@ -21,7 +21,7 @@ class CourseLibraryDialog(tk.Toplevel):
 
     def __init__(
         self,
-        parent: tk.Misc,
+        parent: ModalParent,
         library: CourseLibrary,
         connection: sqlite3.Connection,
         *,
@@ -92,7 +92,7 @@ class CourseLibraryDialog(tk.Toplevel):
         self._table.bind("<Delete>", lambda _event: self._delete_course())
         self.bind("<Escape>", lambda _event: self.destroy())
         search.focus_set()
-        self._populate()
+        self._reload()
         # Sized here and after rescans, not on every search keystroke:
         # columns jumping while the user types would be worse than clipping.
         autosize_columns(self._table)
@@ -116,15 +116,25 @@ class CourseLibraryDialog(tk.Toplevel):
                 due[review.database_id] = due.get(review.database_id, 0) + 1
         return attempts, due
 
+    def _reload(self) -> None:
+        """Re-read the library and its statistics, then redraw.
+
+        Only for events that actually change the data: opening the dialog,
+        rescanning, and the pin/tags/status/delete actions. Searching and
+        sorting redraw from this snapshot instead -- recomputing due counts
+        replays the whole attempt history, which is far too much work to
+        repeat on every keystroke."""
+        self._courses = {course.database_id: course for course in self._library.courses()}
+        self._attempts, self._due = self._statistics()
+        self._populate()
+
     def _populate(self) -> None:
         selected = self._table.selection()
         selected_id = selected[0] if selected else None
         self._table.delete(*self._table.get_children())
-        attempts, due = self._statistics()
-        self._attempts, self._due = attempts, due
         query = self._search.get().strip().casefold()
-        courses = self._library.courses()
-        self._courses = {course.database_id: course for course in courses}
+        courses = list(self._courses.values())
+        attempts, due = self._attempts, self._due
         filtered = [course for course in courses if self._matches(course, query)]
         filtered.sort(key=self._sort_key, reverse=self._sort_descending)
         filtered.sort(key=lambda course: course.pinned, reverse=True)
@@ -248,7 +258,7 @@ class CourseLibraryDialog(tk.Toplevel):
                 messagebox.showerror("Could not delete", f"{path}\n\n{exc}", parent=self)
                 return
         self._library.forget(course.database_id)
-        self._populate()
+        self._reload()
         self._status.set(f"Deleted {course.name}.")
 
     def _rescan(self) -> None:
@@ -258,7 +268,7 @@ class CourseLibraryDialog(tk.Toplevel):
             result = self._library.scan()
         finally:
             self.configure(cursor="")
-        self._populate()
+        self._reload()
         autosize_columns(self._table)
         self._status.set(
             f"{result.discovered} found; {result.indexed} updated; {result.invalid} unreadable"
@@ -268,7 +278,7 @@ class CourseLibraryDialog(tk.Toplevel):
         course = self._selected()
         if course is not None:
             self._library.set_pinned(course.database_id, not course.pinned)
-            self._populate()
+            self._reload()
 
     def _edit_tags(self) -> None:
         course = self._selected()
@@ -279,7 +289,7 @@ class CourseLibraryDialog(tk.Toplevel):
         )
         if value is not None:
             self._library.set_tags(course.database_id, value.split(","))
-            self._populate()
+            self._reload()
 
     def _set_status(self) -> None:
         course = self._selected()
@@ -296,4 +306,4 @@ class CourseLibraryDialog(tk.Toplevel):
         except ValueError:
             messagebox.showerror("Invalid status", "Use active, paused, completed, or archived.", parent=self)
             return
-        self._populate()
+        self._reload()

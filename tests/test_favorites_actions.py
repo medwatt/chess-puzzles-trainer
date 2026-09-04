@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -110,3 +111,51 @@ def test_all_favorites_resolves_a_moved_deck_through_library(tmp_path: Path) -> 
 
     assert len(favorites) == 1
     assert favorites[0][1].database_path == str(moved.resolve())
+
+
+def test_resolve_reviews_keeps_due_order_and_serves_unlocated_from_open_deck(
+    tmp_path: Path,
+) -> None:
+    """Order is the review queue's meaning: most overdue first.
+
+    Grouping by deck reorders the work, so the resolver has to restore the
+    caller's order afterwards. Attempts predating the locator columns carry no
+    path and are served only from the deck that happens to be open -- here the
+    most overdue item, so a lost sort shows up as wrong order rather than a
+    missing puzzle."""
+    from chess_puzzles.review import DueReview
+
+    def _deck(name: str, uci: str) -> tuple[Path, str]:
+        # Distinct moves: puzzle_id is a content fingerprint, so identical
+        # content in three decks would collapse to one id.
+        path = tmp_path / f"{name}.cpdb"
+        puzzle = Puzzle(title=name, initial_fen=FEN, moves=(chess.Move.from_uci(uci),))
+        db = ContentDatabase.create(path, ContentMeta(database_id=name, name=name), [puzzle])
+        db.close()
+        reopened = ContentDatabase.open(path)
+        puzzle_id = reopened.puzzle_at(0).puzzle_id
+        reopened.close()
+        return path, puzzle_id
+
+    path_a, id_a = _deck("dbA", "e2e3")
+    path_b, id_b = _deck("dbB", "e2d3")
+    path_c, id_c = _deck("dbC", "e2f3")
+    store = UserStore.open(tmp_path / "userdata.db")
+    store.library.set_root(tmp_path)
+    store.library.scan()
+
+    open_deck = ContentDatabase.open(path_c)
+    window = SimpleNamespace(
+        user_store=store, database=open_deck, database_path=path_c, favorites_view=False
+    )
+    now = datetime.now(UTC)
+    due = [
+        DueReview(id_c, now, "", ""),  # unlocated: only the open deck can serve it
+        DueReview(id_a, now, "dbA", str(path_a)),
+        DueReview(id_b, now, "dbB", str(path_b)),
+    ]
+
+    pairs = MainDatabaseActions(window)._resolve_reviews(due)
+    open_deck.close()
+
+    assert [ref.database_id for _puzzle, ref in pairs] == ["dbC", "dbA", "dbB"]

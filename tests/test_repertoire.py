@@ -6,7 +6,7 @@ import chess
 import chess.pgn
 
 from chess_puzzles.pgn.loader import PgnLoader
-from chess_puzzles.pgn.repertoire import ImportChoices, profile_games
+from chess_puzzles.pgn.repertoire import ImportChoices, profile_games, profile_pgn_file
 
 
 def _games(pgn_text: str) -> list[chess.pgn.Game]:
@@ -148,3 +148,34 @@ def test_default_choices_change_nothing() -> None:
     assert [(p.title, p.theme, p.player_color) for p in plain] == [
         (p.title, p.theme, p.player_color) for p in with_default
     ]
+
+
+# Chessable-style export: a blank line between the leading comment and the
+# first move. The PGN spec ends the movetext at a blank line, so an
+# un-normalized read sees two games (one move-less, one headerless).
+QUIRKY_EXPORT = """[Event "Course"]
+[White "Chapter One"]
+[Black "Main line"]
+[Result "*"]
+
+{Introduction to the line.}
+
+1. e4 e5 2. Nf3 Nc6 3. Bb5 *
+"""
+
+
+def test_profiling_and_loading_agree_on_a_quirky_export(tmp_path) -> None:
+    """The dialog must describe the file the loader will actually import.
+
+    Profiling used to read the raw text while the loader normalized first, so
+    a course like this profiled as two games and imported as one."""
+    path = tmp_path / "course.pgn"
+    path.write_text(QUIRKY_EXPORT, encoding="utf-8")
+
+    profile = profile_pgn_file(path)
+    puzzles = PgnLoader().load_file(path)
+
+    assert len(_games(QUIRKY_EXPORT)) == 2, "raw read still splits the game"
+    assert len(puzzles) == 1
+    assert profile.game_count == len(puzzles)
+    assert profile.trained_side == chess.WHITE

@@ -61,7 +61,6 @@ class ArenaConfig:
 
 
 def write_arena_meta(database: ContentDatabase, config: ArenaConfig) -> None:
-    database.set_meta_value("kind", DECK_KIND_ARENA)
     database.set_meta_value(META_START_RATING, str(config.start_rating))
     database.set_meta_value(META_THEMES, json.dumps(list(config.themes)))
     database.set_meta_value(META_POPULARITY_MIN, str(config.popularity_min))
@@ -130,6 +129,7 @@ def create_arena(
         database_id=str(uuid.uuid4()),
         name=name,
         description=f"Rated session starting at {config.start_rating}.",
+        kind=DECK_KIND_ARENA,
         source_kind="lichess",
         source_path=config.csv_path,
         created_at=now_iso(),

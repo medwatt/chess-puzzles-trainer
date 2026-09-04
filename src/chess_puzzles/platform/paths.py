@@ -34,5 +34,7 @@ def project_root() -> Path:
 
 def assets_dir() -> Path:
     if getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS"):
-        return Path(sys._MEIPASS) / "assets"
+        # PyInstaller injects sys._MEIPASS at runtime; it is not part of the
+        # sys module's declared interface, hence the getattr rather than a cast.
+        return Path(getattr(sys, "_MEIPASS")) / "assets"
     return project_root() / "assets"

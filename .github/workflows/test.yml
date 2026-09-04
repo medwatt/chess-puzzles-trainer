@@ -20,4 +20,8 @@ jobs:
 
       - run: pip install .[dev]
 
+      - run: ruff check src tests
+
+      - run: git diff --check
+
       - run: python -m pytest tests/ -v

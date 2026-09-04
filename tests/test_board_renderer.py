@@ -97,7 +97,7 @@ def test_control_overlay_cycle_only_redraws_overlay_layer() -> None:
     coordinator.render(state, geometry)
     backend.operations.clear()
 
-    state = state.copy_with(control_overlay=ControlOverlayMode.HANGING)
+    state = state.copy_with(control_overlay=ControlOverlayMode.UNDER_PRESSURE)
     coordinator.render(state, geometry)
 
     cleared_tags = [args[0] for name, args, _options in backend.operations if name == "clear"]

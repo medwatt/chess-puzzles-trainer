@@ -16,6 +16,29 @@ def load_json_object(path: str | Path, *, error_message: str) -> dict[str, Any]:
     return data
 
 
+def int_value(
+    data: dict[str, Any],
+    key: str,
+    default: int,
+    minimum: int | None = None,
+    maximum: int | None = None,
+) -> int:
+    """Read one integer setting, falling back to ``default`` when unusable.
+
+    Strict on purpose: a JSON string or bool is a malformed settings file, not
+    something to coerce. ``True`` is an ``int`` in Python, so it is rejected
+    explicitly. Bounds clamp rather than reject, because an out-of-range number
+    is still a legible intention."""
+    value = data.get(key, default)
+    if isinstance(value, bool) or not isinstance(value, int):
+        return default
+    if minimum is not None:
+        value = max(minimum, value)
+    if maximum is not None:
+        value = min(maximum, value)
+    return value
+
+
 def save_json_object(path: str | Path, data: dict[str, Any]) -> None:
     """Write JSON atomically so a crash mid-write cannot corrupt the file."""
     target = Path(path)

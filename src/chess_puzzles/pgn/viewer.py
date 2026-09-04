@@ -260,7 +260,7 @@ class PgnViewer(tk.Toplevel):
 
     def _write_alternative(
         self,
-        start_node: chess.pgn.GameNode,
+        start_node: chess.pgn.ChildNode,
         board_before: chess.Board,
         view_parent: int,
         depth: int,
@@ -277,7 +277,7 @@ class PgnViewer(tk.Toplevel):
 
     def _append_move(
         self,
-        pgn_node: chess.pgn.GameNode,
+        pgn_node: chess.pgn.ChildNode,
         board: chess.Board,
         view_parent: int,
         depth: int,

@@ -7,7 +7,7 @@ from tkinter import messagebox, ttk
 
 from chess_puzzles.constants import USER_DATA_MANAGER_GEOMETRY
 from chess_puzzles.store import UserStore
-from chess_puzzles.ui.modal import run_modal
+from chess_puzzles.ui.modal import ModalParent, run_modal
 from chess_puzzles.ui.table import autosize_columns
 from chess_puzzles.ui.window import fit_window
 from chess_puzzles.vision.registry import registry
@@ -16,7 +16,7 @@ from chess_puzzles.vision.registry import registry
 class UserDataManagerDialog(tk.Toplevel):
     def __init__(
         self,
-        parent: tk.Misc,
+        parent: ModalParent,
         store: UserStore,
         *,
         database_id: str | None = None,

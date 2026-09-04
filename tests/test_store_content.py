@@ -1,13 +1,19 @@
 from __future__ import annotations
 
 import sqlite3
+from dataclasses import replace
 from pathlib import Path
 
 import chess
 import pytest
 
 from chess_puzzles.puzzle import Puzzle
-from chess_puzzles.store.content import ContentDatabase, ContentMeta
+from chess_puzzles.store.content import (
+    DECK_KIND_REPERTOIRE,
+    DECK_KIND_TACTICS,
+    ContentDatabase,
+    ContentMeta,
+)
 
 
 FEN = "8/8/8/8/8/8/4K3/7k w - - 0 1"
@@ -279,9 +285,25 @@ def test_deck_kind_round_trips() -> None:
 def test_set_meta_value_overwrites_existing_key() -> None:
     db = ContentDatabase.in_memory(_meta(), _sample_puzzles())
 
-    db.set_meta_value("kind", "repertoire")
-    db.set_meta_value("kind", "tactics")
+    db.set_meta_value("arena_batch_size", "10")
+    db.set_meta_value("arena_batch_size", "25")
 
-    assert db.kind == "tactics"
-    # Free-form meta keys never leak into the structured meta view.
-    assert not hasattr(db.meta, "kind")
+    assert db.meta_value("arena_batch_size") == "25"
+    # Free-form meta keys stay out of the structured meta view.
+    assert not hasattr(db.meta, "arena_batch_size")
+
+
+def test_kind_is_written_at_creation_and_defaults_to_tactics() -> None:
+    """A deck is classified by ContentMeta, not by a follow-up write.
+
+    Patching kind after create left a window where a failed second write
+    published a wrongly classified deck."""
+    tactics = ContentDatabase.in_memory(_meta(), _sample_puzzles())
+    repertoire = ContentDatabase.in_memory(
+        replace(_meta(), kind=DECK_KIND_REPERTOIRE), _sample_puzzles()
+    )
+
+    assert tactics.meta.kind == DECK_KIND_TACTICS
+    assert tactics.kind == DECK_KIND_TACTICS
+    assert repertoire.meta.kind == DECK_KIND_REPERTOIRE
+    assert repertoire.kind == DECK_KIND_REPERTOIRE

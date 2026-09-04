@@ -19,7 +19,7 @@ from chess_puzzles.pgn.repertoire import (
     CourseProfile,
     ImportChoices,
 )
-from chess_puzzles.ui.modal import run_modal
+from chess_puzzles.ui.modal import ModalParent, run_modal
 
 
 _NO_CHAPTER_LABEL = "(none — one chapter per game)"
@@ -28,7 +28,7 @@ _PREVIEW_ROWS = 6
 
 
 class RepertoireImportDialog(tk.Toplevel):
-    def __init__(self, parent: tk.Misc, course_name: str, profile: CourseProfile) -> None:
+    def __init__(self, parent: ModalParent, course_name: str, profile: CourseProfile) -> None:
         super().__init__(parent, name="repertoireimport", class_="ChessPuzzlesRepertoireImport")
         self.title("Import Opening Course")
         self.transient(parent)

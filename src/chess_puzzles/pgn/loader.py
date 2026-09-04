@@ -8,6 +8,7 @@ import chess
 import chess.pgn
 
 from chess_puzzles.pgn.repertoire import ImportChoices
+from chess_puzzles.pgn.utils import normalize_pgn_text
 from chess_puzzles.puzzle import Puzzle
 from chess_puzzles.puzzle.skip import infer_skip_first_move
 from chess_puzzles.puzzle.tree import MISTAKE_NAGS
@@ -42,7 +43,7 @@ class PgnLoader:
         # line (see _build_line_puzzles) -- the repertoire import mode.
         # ``choices`` carries the course-import answers (trained side, naming
         # headers); the default changes nothing.
-        stream = io.StringIO(self._collapse_movetext_blank_lines(handle.read()))
+        stream = io.StringIO(normalize_pgn_text(handle.read()))
         choices = choices or _NO_CHOICES
 
         puzzles: list[Puzzle] = []
@@ -165,59 +166,6 @@ class PgnLoader:
         """
         return bool(puzzle.moves) or any(comment.strip() for comment in puzzle.comments)
 
-    @staticmethod
-    def _collapse_movetext_blank_lines(text: str) -> str:
-        """Remove blank lines that sit inside a game's movetext.
-
-        Some exporters (e.g. Chessable) put a blank line between a leading
-        comment and the first move. The PGN spec treats a blank line as the
-        end of the movetext, so python-chess splits such a game in two: a
-        move-less game, plus a headerless game whose moves are then parsed
-        against the default starting position and silently discarded -- the
-        solution is lost.
-
-        A blank line is a genuine game separator only when the next non-blank
-        line starts a new header (``[``). Any other blank line is stray and is
-        dropped, unless it falls inside a ``{...}`` comment (where blank lines
-        are legitimate text and do not terminate the movetext).
-        """
-        lines = text.splitlines()
-        kept: list[str] = []
-        in_comment = False
-        for index, line in enumerate(lines):
-            if not in_comment and line.strip() == "":
-                following = next(
-                    (lines[j] for j in range(index + 1, len(lines)) if lines[j].strip()),
-                    "",
-                )
-                if not following.lstrip().startswith("["):
-                    continue
-            kept.append(line)
-            in_comment = PgnLoader._scan_comment_state(line, in_comment)
-        return "\n".join(kept) + "\n"
-
-    @staticmethod
-    def _scan_comment_state(line: str, in_comment: bool) -> bool:
-        """Return whether we are inside a ``{...}`` comment after consuming ``line``.
-
-        Mirrors python-chess exactly so our notion of "inside a comment" matches
-        the parser's: a ``{`` opens a comment that ends at the very next ``}``
-        (PGN comments do not nest, so a ``{`` within one is literal text), ``;``
-        starts a rest-of-line comment when not already inside braces, and header
-        lines never open a comment. Tracking nesting with a counter instead would
-        desync permanently on the unbalanced/nested braces real exports contain.
-        """
-        if not in_comment and line.lstrip().startswith("["):
-            return False
-        for char in line:
-            if in_comment:
-                if char == "}":
-                    in_comment = False
-            elif char == "{":
-                in_comment = True
-            elif char == ";":
-                break
-        return in_comment
 
     def _mainline(self, game: chess.pgn.Game) -> tuple[tuple[chess.Move, ...], tuple[str, ...]]:
         """Collect the mainline solution moves and their comments.

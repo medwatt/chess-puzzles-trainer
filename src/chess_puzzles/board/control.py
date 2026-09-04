@@ -1,8 +1,15 @@
-"""Fast heuristic to find pieces that are hanging or in danger.
+"""Fast heuristic to find pieces under pressure.
 
 We count attackers and defenders on each square but skip pins and
 capture sequences. The goal is to highlight pieces you should look at
 twice, not to compute the exact evaluation of the position.
+
+Deliberately *not* the same question as ``vision.analysis``: the drills ask
+whether a piece can actually be won (a full static exchange), while this asks
+whether a piece looks worth a second glance. A piece can be under pressure here
+and perfectly safe there. Keep the two vocabularies apart -- calling both
+"hanging" is what made them look like a contradiction rather than two
+intentionally different tools.
 """
 
 from __future__ import annotations
@@ -11,23 +18,15 @@ from enum import Enum
 
 import chess
 
+from chess_puzzles.move_utils import PIECE_VALUES
+
 
 class ControlOverlayMode(Enum):
     """What the on-demand insight overlay currently shows."""
 
     OFF = "off"
-    HANGING = "hanging"
+    UNDER_PRESSURE = "under_pressure"
     CONTROL = "control"
-
-
-PIECE_VALUES: dict[chess.PieceType, int] = {
-    chess.PAWN: 1,
-    chess.KNIGHT: 3,
-    chess.BISHOP: 3,
-    chess.ROOK: 5,
-    chess.QUEEN: 9,
-    chess.KING: 100,
-}
 
 
 def squares_in_danger(board: chess.Board) -> frozenset[int]:

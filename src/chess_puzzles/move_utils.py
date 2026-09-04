@@ -3,6 +3,19 @@ from __future__ import annotations
 import chess
 
 
+# Centipawn-free material values, shared by the board overlay and the vision
+# drills. The king is nominal: it is never actually won, but scoring it above
+# every other piece keeps "cheapest attacker" comparisons total.
+PIECE_VALUES: dict[chess.PieceType, int] = {
+    chess.PAWN: 1,
+    chess.KNIGHT: 3,
+    chess.BISHOP: 3,
+    chess.ROOK: 5,
+    chess.QUEEN: 9,
+    chess.KING: 100,
+}
+
+
 def normalize_promotion(
     board: chess.Board,
     move: chess.Move,

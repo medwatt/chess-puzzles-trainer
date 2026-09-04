@@ -19,7 +19,7 @@ from tkinter import messagebox, ttk
 import chess.engine
 
 from chess_puzzles.mining.blunder_miner import BlunderMiner, MinedPuzzle, MiningCriteria
-from chess_puzzles.ui.modal import run_modal
+from chess_puzzles.ui.modal import ModalParent, run_modal
 
 
 _POLL_MS = 100
@@ -28,7 +28,7 @@ _POLL_MS = 100
 class MiningRunDialog(tk.Toplevel):
     def __init__(
         self,
-        parent: tk.Misc,
+        parent: ModalParent,
         *,
         engine_command: str,
         engine_threads: int,

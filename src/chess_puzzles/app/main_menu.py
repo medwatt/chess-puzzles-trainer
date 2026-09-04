@@ -162,9 +162,9 @@ class MainMenuBuilder:
             command=window.show_threats,
         )
         tools_menu.add_command(
-            label="Highlight hanging pieces",
-            accelerator=MENU_ACCELERATORS[MainShortcuts.TOGGLE_HANGING_OVERLAY],
-            command=window.toggle_hanging_overlay,
+            label="Highlight pieces under pressure",
+            accelerator=MENU_ACCELERATORS[MainShortcuts.TOGGLE_UNDER_PRESSURE_OVERLAY],
+            command=window.toggle_under_pressure_overlay,
         )
         tools_menu.add_command(
             label="Show contested squares",
@@ -324,7 +324,7 @@ class MainMenuBuilder:
             MainShortcuts.SHOW_HINT: window.show_hint,
             MainShortcuts.PLAY_MOVE: window.play_next_move_for_user,
             MainShortcuts.SHOW_THREATS: window.show_threats,
-            MainShortcuts.TOGGLE_HANGING_OVERLAY: window.toggle_hanging_overlay,
+            MainShortcuts.TOGGLE_UNDER_PRESSURE_OVERLAY: window.toggle_under_pressure_overlay,
             MainShortcuts.TOGGLE_CONTESTED_OVERLAY: window.toggle_contested_overlay,
             MainShortcuts.TOGGLE_SKIP: window.toggle_current_skip,
             MainShortcuts.TOGGLE_AUTO_NEXT: lambda: window.toggle_option("auto_advance"),

@@ -5,7 +5,7 @@ from tkinter import font, ttk
 
 from chess_puzzles.constants import FONT_DIALOG_GEOMETRY
 from chess_puzzles.settings.model import AppSettings
-from chess_puzzles.ui.modal import run_modal
+from chess_puzzles.ui.modal import ModalParent, run_modal
 from chess_puzzles.ui.window import fit_window
 
 
@@ -18,7 +18,7 @@ FONT_STYLE_LABELS = {
 
 
 class FontChooserDialog(tk.Toplevel):
-    def __init__(self, parent: tk.Misc, settings: AppSettings) -> None:
+    def __init__(self, parent: ModalParent, settings: AppSettings) -> None:
         super().__init__(parent, name="fontchooser", class_="ChessPuzzlesFontChooser")
         self.title("Choose font")
         self.transient(parent)

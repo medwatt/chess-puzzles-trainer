@@ -6,7 +6,7 @@ from tkinter import messagebox, ttk
 
 from chess_puzzles.constants import ENGINE_CONFIG_DIALOG_GEOMETRY
 from chess_puzzles.engine.config import EngineConfig, EngineDefinition, new_engine_definition
-from chess_puzzles.ui.modal import run_modal
+from chess_puzzles.ui.modal import ModalParent, run_modal
 from chess_puzzles.ui.table import autosize_columns
 from chess_puzzles.ui.window import fit_window
 
@@ -14,7 +14,7 @@ from chess_puzzles.ui.window import fit_window
 class EngineConfigDialog(tk.Toplevel):
     COLUMNS = ("default", "name", "command", "threads", "time", "depth")
 
-    def __init__(self, parent: tk.Misc, config: EngineConfig) -> None:
+    def __init__(self, parent: ModalParent, config: EngineConfig) -> None:
         super().__init__(parent, name="engineconfig", class_="ChessPuzzlesEngineConfig")
         self.title("Configure Engines")
         self.transient(parent)
@@ -134,7 +134,7 @@ class EngineConfigDialog(tk.Toplevel):
 
 
 class EngineEditDialog(tk.Toplevel):
-    def __init__(self, parent: tk.Misc, engine: EngineDefinition | None) -> None:
+    def __init__(self, parent: ModalParent, engine: EngineDefinition | None) -> None:
         super().__init__(parent, name="engineedit", class_="ChessPuzzlesEngineEdit")
         self.title("Edit Engine" if engine else "New Engine")
         self.transient(parent)

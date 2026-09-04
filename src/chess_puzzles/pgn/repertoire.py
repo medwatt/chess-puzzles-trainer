@@ -28,6 +28,8 @@ from pathlib import Path
 import chess
 import chess.pgn
 
+from chess_puzzles.pgn.utils import normalize_pgn_text
+
 from chess_puzzles.puzzle.tree import MISTAKE_NAGS
 
 
@@ -79,8 +81,10 @@ class CourseProfile:
 
 
 def profile_pgn_file(path: str | Path) -> CourseProfile:
+    # Same normalization the loader applies, so the profile the import dialog
+    # shows describes the games that will actually be imported.
     with Path(path).open("r", encoding="utf-8-sig") as handle:
-        return profile_games(_read_games(handle.read()))
+        return profile_games(_read_games(normalize_pgn_text(handle.read())))
 
 
 def profile_games(games: Sequence[chess.pgn.Game]) -> CourseProfile:

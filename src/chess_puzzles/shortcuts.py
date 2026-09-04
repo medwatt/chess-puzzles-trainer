@@ -85,7 +85,7 @@ class MainShortcuts:
     # Board & insights
     FLIP_BOARD = Shortcut("f", "Flip board", BOARD)
     SHOW_THREATS = Shortcut("t", "Show opponent threat", BOARD)
-    TOGGLE_HANGING_OVERLAY = Shortcut("d", "Highlight hanging pieces (danger)", BOARD)
+    TOGGLE_UNDER_PRESSURE_OVERLAY = Shortcut("d", "Highlight pieces under pressure", BOARD)
     TOGGLE_CONTESTED_OVERLAY = Shortcut("c", "Show contested squares", BOARD)
     CLEAR_MARKS = Shortcut("<Escape>", "Clear marks", BOARD)
     TOGGLE_COORDINATES = Shortcut("<Control-Shift-C>", "Toggle coordinates", BOARD)

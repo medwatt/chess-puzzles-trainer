@@ -3,11 +3,11 @@ from __future__ import annotations
 import tkinter as tk
 from tkinter import ttk
 
-from chess_puzzles.ui.modal import run_modal
+from chess_puzzles.ui.modal import ModalParent, run_modal
 
 
 class ChoiceDialog(tk.Toplevel):
-    def __init__(self, parent: tk.Misc, title: str, label: str, choices: list[str], default: str | None = None) -> None:
+    def __init__(self, parent: ModalParent, title: str, label: str, choices: list[str], default: str | None = None) -> None:
         super().__init__(parent, name="choicedialog", class_="ChessPuzzlesChoiceDialog")
         self.title(title)
         self.transient(parent)

@@ -14,21 +14,12 @@ from enum import Enum
 
 import chess
 
+from chess_puzzles.move_utils import PIECE_VALUES
+
 # Step deltas (file, rank) for sliding rays, split by the piece types that move
 # along them. Used to count X-ray / battery pressure through aligned sliders.
 _STRAIGHT_STEPS = ((1, 0), (-1, 0), (0, 1), (0, -1))
 _DIAGONAL_STEPS = ((1, 1), (1, -1), (-1, 1), (-1, -1))
-
-# Rough piece values, used only by the winnability check that filters which
-# count-hanging pieces the hanging drill actually serves (not by the count rule).
-_PIECE_VALUES: dict[chess.PieceType, int] = {
-    chess.PAWN: 1,
-    chess.KNIGHT: 3,
-    chess.BISHOP: 3,
-    chess.ROOK: 5,
-    chess.QUEEN: 9,
-    chess.KING: 100,
-}
 
 
 class ColorScope(Enum):
@@ -144,7 +135,7 @@ def is_winnable(board: chess.Board, square: int) -> bool:
     if piece is None or piece.piece_type == chess.KING:
         return False
     enemy = not piece.color
-    captured_value = _PIECE_VALUES[piece.piece_type]
+    captured_value = PIECE_VALUES[piece.piece_type]
     test = _with_turn(board, enemy)
     for attacker_square in board.attackers(enemy, square):
         move = chess.Move(attacker_square, square)
@@ -417,7 +408,7 @@ def _best_exchange_gain(board: chess.Board, square: int) -> int:
             continue
         test = board.copy(stack=False)
         test.push(move)
-        gain = _PIECE_VALUES[captured.piece_type] - _best_exchange_gain(test, square)
+        gain = PIECE_VALUES[captured.piece_type] - _best_exchange_gain(test, square)
         if gain > best:
             best = gain
     return best

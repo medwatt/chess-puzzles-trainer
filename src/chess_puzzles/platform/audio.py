@@ -87,11 +87,16 @@ class AudioPlayer:
     def _play_file(self, path: Path) -> None:
         if self._uses_windows_sound:
             try:
-                import winsound
+                import winsound  # pyright: ignore[reportMissingModuleSource]
 
                 # Synchronous inside the worker: the UI remains asynchronous,
                 # while consecutive requests cannot interrupt one another.
-                winsound.PlaySound(str(path), winsound.SND_FILENAME | winsound.SND_NODEFAULT)
+                # Windows-only module: on a Linux/macOS type-check its members
+                # are genuinely absent, and this branch never runs there.
+                winsound.PlaySound(  # pyright: ignore[reportAttributeAccessIssue]
+                    str(path),
+                    winsound.SND_FILENAME | winsound.SND_NODEFAULT,  # pyright: ignore[reportAttributeAccessIssue]
+                )
             except Exception:
                 pass
             return

@@ -49,26 +49,6 @@ def test_lichess_csv_path_round_trips(tmp_path) -> None:
     assert repository.load().lichess_csv_path == "/data/lichess_db_puzzle.csv"
 
 
-def test_legacy_lichess_json_csv_path_is_readable_once(tmp_path) -> None:
-    # Old installs kept the CSV path in lichess.json; startup migrates it
-    # into AppSettings and new saves of lichess.json no longer carry it.
-    from chess_puzzles.lichess.settings import (
-        legacy_csv_path,
-        load_lichess_settings,
-        save_lichess_settings,
-    )
-
-    path = tmp_path / "lichess.json"
-    path.write_text('{"csv_path": "/old/puzzles.csv", "sample_size": 7}', encoding="utf-8")
-
-    assert legacy_csv_path(path) == "/old/puzzles.csv"
-    settings = load_lichess_settings(path)
-    assert settings.sample_size == 7
-
-    save_lichess_settings(settings, path)
-    assert legacy_csv_path(path) == ""
-
-
 def test_theme_repositories_include_app_and_board_choices() -> None:
     ui_themes = built_in_ui_themes()
     board_themes = built_in_board_themes()

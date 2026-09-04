@@ -6,7 +6,7 @@ from pathlib import Path
 from tkinter import filedialog, ttk
 from typing import Literal, Sequence
 
-from chess_puzzles.ui.modal import run_modal
+from chess_puzzles.ui.modal import ModalParent, run_modal
 
 
 @dataclass(frozen=True, slots=True)
@@ -28,7 +28,7 @@ class PathField:
 class PathsDialog(tk.Toplevel):
     """Edit every user-configurable path in one place."""
 
-    def __init__(self, parent: tk.Misc, fields: Sequence[PathField]) -> None:
+    def __init__(self, parent: ModalParent, fields: Sequence[PathField]) -> None:
         super().__init__(parent, name="paths", class_="ChessPuzzlesPaths")
         self.title("Paths")
         self.transient(parent)

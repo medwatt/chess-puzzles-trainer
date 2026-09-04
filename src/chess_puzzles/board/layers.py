@@ -120,7 +120,7 @@ class CoordinatesLayer(BaseLayer):
 
 
 class ControlOverlayLayer(BaseLayer):
-    """Highlights hanging pieces or shows the square-control heatmap."""
+    """Highlights pieces under pressure or shows the square-control heatmap."""
 
     def __init__(self) -> None:
         super().__init__("control_overlay", 15)
@@ -131,7 +131,7 @@ class ControlOverlayLayer(BaseLayer):
     def redraw(self, state: BoardRenderState, geometry: BoardGeometry) -> None:
         assert self.backend is not None
         self.clear()
-        if state.control_overlay is ControlOverlayMode.HANGING:
+        if state.control_overlay is ControlOverlayMode.UNDER_PRESSURE:
             for square in squares_in_danger(state.board):
                 self._tint(state, geometry, square, state.annotation_theme.danger_color, "gray50")
         elif state.control_overlay is ControlOverlayMode.CONTROL:

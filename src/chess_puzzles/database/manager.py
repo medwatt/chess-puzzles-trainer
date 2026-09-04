@@ -9,14 +9,14 @@ from chess_puzzles.puzzle import Puzzle
 from chess_puzzles.shortcuts import MENU_ACCELERATORS, DatabaseShortcuts
 from chess_puzzles.store import ContentDatabase
 from chess_puzzles.ui.table import autosize_columns
-from chess_puzzles.ui.modal import run_modal
+from chess_puzzles.ui.modal import ModalParent, run_modal
 from chess_puzzles.ui.window import fit_window
 
 
 class DatabaseManagerDialog(tk.Toplevel):
     COLUMNS = ("index", "white", "black", "length", "parity", "skip", "theme")
 
-    def __init__(self, parent: tk.Misc, database: ContentDatabase) -> None:
+    def __init__(self, parent: ModalParent, database: ContentDatabase) -> None:
         super().__init__(parent, name="databasemanager", class_="ChessPuzzlesDatabaseManager")
         self.database = database
         self.new_name: str | None = None

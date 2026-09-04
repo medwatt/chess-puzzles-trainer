@@ -8,7 +8,7 @@ from tkinter import ttk
 
 from chess_puzzles.constants import STATISTICS_DIALOG_GEOMETRY
 from chess_puzzles.reports import AttemptSummary, attempt_summary, deck_summaries, format_duration_ms
-from chess_puzzles.ui.modal import run_modal
+from chess_puzzles.ui.modal import ModalParent, run_modal
 from chess_puzzles.ui.table import autosize_columns
 from chess_puzzles.ui.window import fit_window
 from chess_puzzles.vision.registry import registry
@@ -16,7 +16,7 @@ from chess_puzzles.vision.stats import vision_summary
 
 
 class StatisticsDialog(tk.Toplevel):
-    def __init__(self, parent: tk.Misc, connection: sqlite3.Connection) -> None:
+    def __init__(self, parent: ModalParent, connection: sqlite3.Connection) -> None:
         super().__init__(parent, name="statistics", class_="ChessPuzzlesStatistics")
         self.title("Training Statistics")
         self.transient(parent)

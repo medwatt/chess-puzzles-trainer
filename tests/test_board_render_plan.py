@@ -95,7 +95,7 @@ def test_threat_and_control_overlay_changes_are_isolated() -> None:
     old_state = BoardRenderState()
     new_state = old_state.copy_with(
         threat_move=chess.Move.from_uci("d8h4"),
-        control_overlay=ControlOverlayMode.HANGING,
+        control_overlay=ControlOverlayMode.UNDER_PRESSURE,
     )
 
     changes = calculate_changes(old_state, new_state, geometry, geometry)

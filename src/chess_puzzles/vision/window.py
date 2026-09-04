@@ -364,17 +364,18 @@ class BoardVisionWindow(tk.Toplevel):
         self.board.set_annotations(BoardAnnotations(squares=tuple(squares), arrows=arrows))
 
     def _record(self, result: TrialResult) -> None:
-        question = self.session.question if self.session is not None else None
-        if question is None:
+        session = self.session
+        question = session.question if session is not None else None
+        if session is None or question is None:
             return
         self._user_store.record_vision_attempt(
             VisionAttempt(
-                drill_id=self.session.drill.id,
+                drill_id=session.drill.id,
                 at=now_iso(),
                 fen=question.fen,
                 orientation=int(question.orientation),
                 answer=",".join(str(sq) for sq in sorted(question.answer)),
-                clicks=",".join(str(sq) for sq in sorted(self.session.clicks)),
+                clicks=",".join(str(sq) for sq in sorted(session.clicks)),
                 tp=len(result.correct),
                 fp=len(result.wrong),
                 fn=len(result.missed),

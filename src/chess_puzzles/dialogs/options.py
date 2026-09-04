@@ -11,7 +11,7 @@ from chess_puzzles.settings.options import (
     Option,
     options_in,
 )
-from chess_puzzles.ui.modal import run_modal
+from chess_puzzles.ui.modal import ModalParent, run_modal
 
 
 class OptionsDialog(tk.Toplevel):
@@ -25,7 +25,7 @@ class OptionsDialog(tk.Toplevel):
     """
 
     def __init__(
-        self, parent: tk.Misc, values: Mapping[str, bool], *, deck_kind: str | None = None
+        self, parent: ModalParent, values: Mapping[str, bool], *, deck_kind: str | None = None
     ) -> None:
         super().__init__(parent, name="options", class_="ChessPuzzlesOptions")
         self.title("Options")

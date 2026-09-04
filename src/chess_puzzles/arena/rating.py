@@ -41,6 +41,13 @@ class RatedAttempt:
 
 
 def is_win(attempt: RatedAttempt) -> bool:
+    """Whether a rated attempt counts as a win.
+
+    The Python twin of ``reports.queries.CLEAN_SOLVE``: same three conditions,
+    expressed here over a dataclass rather than in SQL because the rating fold
+    walks attempts in order. Change one and change the other -- the per-deck
+    table drifting from this rule is exactly what made an assisted solve show
+    as clean in one place and not the other."""
     return attempt.outcome == "solved" and attempt.mistakes == 0 and attempt.aids == 0
 
 

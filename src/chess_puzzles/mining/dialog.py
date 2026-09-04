@@ -9,7 +9,7 @@ from chess_puzzles.mining.settings import (
     MiningDialogSettings,
     load_mining_settings,
 )
-from chess_puzzles.ui.modal import run_modal
+from chess_puzzles.ui.modal import ModalParent, run_modal
 
 
 @dataclass(slots=True, frozen=True)
@@ -37,7 +37,7 @@ class BlunderMineDialog(tk.Toplevel):
     (the app's default engine is used) but is shown so a missing
     configuration is obvious before a long run starts."""
 
-    def __init__(self, parent: tk.Misc, engine_name: str | None, csv_path: str | Path) -> None:
+    def __init__(self, parent: ModalParent, engine_name: str | None, csv_path: str | Path) -> None:
         super().__init__(parent, name="blundermine", class_="ChessPuzzlesBlunderMine")
         self.title("Generate Blunder Puzzles")
         self.transient(parent)

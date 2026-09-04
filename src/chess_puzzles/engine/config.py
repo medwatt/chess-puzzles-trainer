@@ -5,7 +5,7 @@ from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any
 
-from chess_puzzles.json_config import load_json_object, save_json_object
+from chess_puzzles.json_config import int_value, load_json_object, save_json_object
 from chess_puzzles.platform.paths import user_config_dir
 
 
@@ -53,9 +53,9 @@ class EngineDefinition:
             engine_id=_string_value(data, "id", uuid.uuid4().hex),
             name=_string_value(data, "name", "Engine"),
             command=_string_value(data, "command", ""),
-            threads=_int_value(data, "threads", 1),
+            threads=int_value(data, "threads", 1),
             time_limit_seconds=_float_value(data, "time_limit_seconds", 1.0),
-            depth=_int_value(data, "depth", 16),
+            depth=int_value(data, "depth", 16),
             options=options,
         ).with_validated_values()
 
@@ -123,11 +123,6 @@ def new_engine_definition(
 def _string_value(data: dict[str, Any], key: str, default: str) -> str:
     value = data.get(key, default)
     return value.strip() if isinstance(value, str) else default
-
-
-def _int_value(data: dict[str, Any], key: str, default: int) -> int:
-    value = data.get(key, default)
-    return value if isinstance(value, int) and not isinstance(value, bool) else default
 
 
 def _float_value(data: dict[str, Any], key: str, default: float) -> float:

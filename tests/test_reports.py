@@ -89,6 +89,24 @@ def test_format_duration_ms() -> None:
     assert format_duration_ms(3_665_000) == "1:01:05"
 
 
+def test_deck_summaries_do_not_count_assisted_solves_as_clean(tmp_path: Path) -> None:
+    """An assisted solve is not clean even with no mistakes.
+
+    The per-deck table used to omit the ``aids`` condition, so a hinted solve
+    showed as clean there while the overall report and arena rating disagreed."""
+    store = UserStore.open(tmp_path / "u.db")
+    store.record_attempt(
+        Attempt(
+            puzzle_id="p1", at="2026-01-01T00:00:00Z", outcome="solved",
+            mistakes=0, aids=1, grade="good", duration_ms=20_000,
+            database_id="course", database_path="/tmp/course.cpdb",
+        )
+    )
+
+    assert deck_summaries(store.connection)[0].clean_solves == 0
+    assert attempt_summary(store.connection).solved == 0
+
+
 def test_deck_summaries_group_attempt_quality(tmp_path: Path) -> None:
     store = UserStore.open(tmp_path / "u.db")
     for puzzle_id, mistakes, aids in (("p1", 0, 0), ("p2", 2, 1)):

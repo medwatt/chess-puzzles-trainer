@@ -37,14 +37,15 @@ import chess
 import chess.engine
 import chess.pgn
 
+from chess_puzzles.mining.settings import DEFAULT_MINING_RATING_MAX, DEFAULT_MINING_RATING_MIN
 from chess_puzzles.pgn.loader import PgnLoader
 from chess_puzzles.puzzle import Puzzle
 
 
 @dataclass(frozen=True, slots=True)
 class MiningCriteria:
-    rating_min: int = 800
-    rating_max: int = 1400
+    rating_min: int = DEFAULT_MINING_RATING_MIN
+    rating_max: int = DEFAULT_MINING_RATING_MAX
     popularity_min: int = 80
     max_refutation_plies: int = 8
     # Evaluations in centipawns from the blunderer's point of view.
