@@ -1,6 +1,6 @@
 [project]
 name = "chess-puzzles-trainer"
-version = "1.1.1"
+version = "1.2.0"
 description = "Desktop chess puzzle trainer with engine analysis and play-vs-engine mode."
 requires-python = ">=3.11"
 dependencies = [
@@ -28,6 +28,11 @@ include = ["assets/**"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["src"]
+
+[tool.ruff.lint]
+# Pinned explicitly: ruff's *default* select changed in 0.16 and broke CI.
+# Whatever ruff [project.optional-dependencies] resolves to, check these.
+select = ["E4", "E7", "E9", "F"]
 
 [tool.pyright]
 # Production code only. Tests use deliberate dynamic fakes (partial MainWindow
